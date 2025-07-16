@@ -1,0 +1,29 @@
+<launch>
+    <node pkg="r_learning" type="emergency_button.py" name="emergency_button" output="screen" required="true"/>
+
+    <arg name="path_topic" default="/path" />
+    <arg name="pose_topic" default="/vrpn_client_node/L1/pose" />
+    <arg name="world_frame" default="map" />
+    <arg name="a" default="0.15" />
+    <arg name="robot_control_topic" default="/cmd_vel"/>
+    <arg name="reference_velocity" default="0.15" />
+    <arg name="gains/x" default="1"/>
+    <arg name="gains/y" default="1.5"/>
+    <arg name="obs_filter_gain" default="0.3"/>
+    <arg name="filter_gain" default="1.0"/>
+    <arg name="control_frequency" default="30.0"/>
+    
+    <node pkg="r_learning" type="differential_control" name="limo_control_node" output="screen">
+        <param name="path_topic" value="$(arg path_topic)"/>
+        <param name="pose_topic" value="$(arg pose_topic)"/>
+        <param name="world_frame" value="$(arg world_frame)"/>
+        <param name="a" value="$(arg a)"/>
+        <param name="robot_control_topic" value="$(arg robot_control_topic)"/>
+        <param name="reference_velocity" value="$(arg reference_velocity)"/>
+        <param name="gains/x" value="$(arg gains/x)"/>
+        <param name="gains/y" value="$(arg gains/y)"/>
+        <param name="obs_filter_gain" value="$(arg obs_filter_gain)"/>
+        <param name="filter_gain" value="$(arg filter_gain)"/>
+        <param name="control_frequency" value="$(arg control_frequency)"/>
+    </node>
+</launch>

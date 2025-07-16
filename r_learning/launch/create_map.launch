@@ -1,0 +1,15 @@
+<launch>
+  <arg name="grid_width" default="9"/>
+  <arg name="grid_height" default="7"/>
+  <arg name="cell_size_cm" default="50.0"/>
+  <arg name="file_name" default="limo_lab_map_2"/>
+  
+  <node pkg="r_learning" type="create_map.py" name="grid_creator_node" output="screen">
+    <param name="grid_width"     value="$(arg grid_width)"/>
+    <param name="grid_height"    value="$(arg grid_height)"/>
+    <param name="cell_size_cm"   value="$(arg cell_size_cm)"/>
+    <param name="output_dir"     value="$(find r_learning)/maps"/>
+    <param name="file_name"      value="$(arg file_name)"/>
+    <param name="frame_id"       value="map"/>
+  </node>
+</launch>

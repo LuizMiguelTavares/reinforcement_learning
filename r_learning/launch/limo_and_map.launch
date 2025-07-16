@@ -1,9 +1,8 @@
 <launch>
-    <!-- Launch limo gazebo simulation -->
     <arg name="robot_namespace" default="/"/>
-    <arg name="gui" default="true"/>
-    <arg name="use_rviz" default="false" />
-    <!-- <arg name="map" default="$(find rrt_project)/maps/simulation/limo_map/map.yaml"/> -->
+    <arg name="gui" default="false"/>
+    <arg name="use_rviz" default="true" />
+    <arg name="map" default="$(find r_learning)/maps/limo_lab_map.yaml"/>
 
     <include file="$(find gazebo_ros)/launch/empty_world.launch">
         <arg name="world_name" value="$(find limo_gazebo_sim)/worlds/empty.world"/>
@@ -17,11 +16,10 @@
     <param name="robot_description" command="$(find xacro)/xacro '$(find limo_description)/urdf/limo_four_diff.xacro'
         robot_namespace:=$(arg robot_namespace)" />
 
-    <!-- initial pose -->
-    <arg name="x" default="0.0"/>
-    <arg name="y" default="0.0"/>
+    <arg name="x" default="0.25"/>
+    <arg name="y" default="0.25"/>
     <arg name="z" default="0.0"/>
-    <arg name="yaw" default="-1.5708"/>
+    <arg name="yaw" default="0.0"/>
     
     <node name="spawn_limo_model" pkg="gazebo_ros" type="spawn_model" args="-x $(arg x)
               -y $(arg y)
@@ -32,26 +30,24 @@
               -param robot_description
               -model 'limo$(arg robot_namespace)'" />
 
-    <!-- Load joint controller configurations from YAML file to parameter server -->
     <rosparam file="$(find limo_gazebo_sim)/config/limo_four_diff_control.yaml" command="load" />
 
-    <!-- load the controllers -->
     <node name="controller_spawner" pkg="controller_manager" type="spawner"
           respawn="false" output="screen" args="limo_state_controller " />
 
     <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
 
-    <node name="rviz" pkg="rviz" type="rviz" required="false" if="$(arg use_rviz)" />
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find r_learning)/rviz/r_learning.rviz" required="false" if="$(arg use_rviz)" />
 
-    <!-- <node name="map_server" pkg="map_server" type="map_server" args="$(arg map)" /> -->
+    <node name="map_server" pkg="map_server" type="map_server" args="$(arg map)" />
 
-    <!-- <arg name="world_frame" default="map" />
+    <arg name="world_frame" default="map" />
     <arg name="robot_frame" default="odom" />
     <arg name="robot_name" default="limo/" />
-    <node pkg="rrt_project" type="publish_gazebo_positions.py" name="publish_gazebo_positions" >
+    <node pkg="r_learning" type="publish_gazebo_positions.py" name="publish_gazebo_positions" >
         <param name="robot_vrpn_topic" value="/vrpn_client_node/L1/pose" />
         <param name="robot_frame" value="$(arg robot_frame)"/>
         <param name="robot_name" value="$(arg robot_name)"/>
         <param name="frame_id" value="$(arg world_frame)"/>
-    </node> -->
+    </node>
 </launch>
