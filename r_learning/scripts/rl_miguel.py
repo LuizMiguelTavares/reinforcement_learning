@@ -3,11 +3,13 @@
 import numpy as np
 import rospy
 from nav_msgs.msg import OccupancyGrid, Path
-import math, time
+import math
+import time
 from collections import deque
 from typing import List, Tuple, Optional
 import matplotlib.pyplot as plt
 from geometry_msgs.msg import PoseStamped
+
 
 class GridWorld:
     def __init__(
@@ -20,7 +22,8 @@ class GridWorld:
         reward_goal: float = 100.0,
         reward_obstacle: float = -10.0,
         reward_step: float = -0.001,
-        shaping: Optional[str] = "euclidean",      # None | 'manhattan' | 'euclidean'
+        # None | 'manhattan' | 'euclidean'
+        shaping: Optional[str] = "euclidean",
     ):
         # self.width, self.height = width, height
         self.width, self.height = map.shape[1], map.shape[0]
@@ -39,10 +42,11 @@ class GridWorld:
         )
 
         # Build grid --------------------------------------------------
-        self.grid = map.astype(np.int8) 
+        self.grid = map.astype(np.int8)
         # self._populate_obstacles()
         self.start = tuple(start) if start else (0, 0)
-        self.goal = tuple(goal) if goal else (self.grid.shape[0] - 1, self.grid.shape[1] - 1)
+        self.goal = tuple(goal) if goal else (
+            self.grid.shape[0] - 1, self.grid.shape[1] - 1)
         self.grid[self.start] = 0
         self.grid[self.goal] = 0
 
@@ -75,8 +79,10 @@ class GridWorld:
             for _ in range(self.cluster_size):
                 if placed >= n_obs:
                     break
-                dr = self.rng.randint(-self.cluster_size, self.cluster_size + 1)
-                dc = self.rng.randint(-self.cluster_size, self.cluster_size + 1)
+                dr = self.rng.randint(-self.cluster_size,
+                                      self.cluster_size + 1)
+                dc = self.rng.randint(-self.cluster_size,
+                                      self.cluster_size + 1)
                 r, c = center_r + dr, center_c + dc
                 if 0 <= r < self.height and 0 <= c < self.width and self.grid[r, c] == 0:
                     self.grid[r, c] = 1
@@ -120,6 +126,7 @@ class GridWorld:
 
         return next_state, reward, done
 
+
 class QLearningAgent:
     def __init__(
         self,
@@ -162,6 +169,7 @@ class QLearningAgent:
         else:
             self.epsilon = max(self.min_eps, self.epsilon * self.decay)
 
+
 def train(
     env,
     agent,
@@ -170,7 +178,8 @@ def train(
     print_every: int = 100,
     threshold: float = 0.8,
 ):
-    rewards, successes, ep_durations = deque(maxlen=window), deque(maxlen=window), []
+    rewards, successes, ep_durations = deque(
+        maxlen=window), deque(maxlen=window), []
     t_start = time.perf_counter()
 
     for ep in range(1, episodes + 1):
@@ -203,7 +212,8 @@ def train(
     print(f"\nTraining finished in {total_time:.2f} seconds "
           f"({total_time/episodes:.3f} s/episode on average).")
 
-    return list(ep_durations) 
+    return list(ep_durations)
+
 
 def greedy_path(env: GridWorld, agent: QLearningAgent, limit: int = 1000):
     backup = agent.epsilon
@@ -220,6 +230,7 @@ def greedy_path(env: GridWorld, agent: QLearningAgent, limit: int = 1000):
     agent.epsilon = backup
     return path
 
+
 def path_image(env: GridWorld, path: List[Tuple[int, int]]):
     img = np.ones((env.height, env.width, 3))
     img[env.grid == 1] = (0, 0, 0)
@@ -230,10 +241,11 @@ def path_image(env: GridWorld, path: List[Tuple[int, int]]):
             img[r, c] = (0.5, 0.5, 1)
     return img
 
+
 def draw_q_heatmap(ax, env: GridWorld, agent: QLearningAgent):
     V = agent.Q.max(axis=2)
     best = agent.Q.argmax(axis=2)
-    Y, X = np.mgrid[0 : env.height, 0 : env.width]
+    Y, X = np.mgrid[0: env.height, 0: env.width]
     U, Vv = np.zeros_like(V), np.zeros_like(V)
     for r in range(env.height):
         for c in range(env.width):
@@ -271,10 +283,12 @@ def draw_q_heatmap(ax, env: GridWorld, agent: QLearningAgent):
         width=0.002,
     )
 
-    ax.scatter(env.start[1], env.start[0], marker="o", c="lime", s=100, zorder=5)
+    ax.scatter(env.start[1], env.start[0],
+               marker="o", c="lime", s=100, zorder=5)
     ax.scatter(env.goal[1], env.goal[0], marker="*", c="red", s=150, zorder=5)
     ax.set_title("State Values + Greedy Policy")
     ax.set_xticks([]), ax.set_yticks([])
+
 
 def combined_vis(env: GridWorld, agent: QLearningAgent, path):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
@@ -287,11 +301,12 @@ def combined_vis(env: GridWorld, agent: QLearningAgent, path):
     plt.tight_layout()
     plt.show()
 
+
 class BinaryMapConverter:
     def __init__(self):
-        self.map_topic      = rospy.get_param("~map_topic", "/map")
-        self.path_topic   = rospy.get_param("~path_topic", "/path")
-        self.occ_threshold  = rospy.get_param("~occ_threshold", 50)
+        self.map_topic = rospy.get_param("~map_topic", "/map")
+        self.path_topic = rospy.get_param("~path_topic", "/path")
+        self.occ_threshold = rospy.get_param("~occ_threshold", 50)
         self.unknown_is_free = rospy.get_param("~unknown_is_free", True)
         self.pts_per_m = rospy.get_param("~points_per_meter", 20.0)
 
@@ -299,10 +314,10 @@ class BinaryMapConverter:
         self.path = None
 
         self.pub = rospy.Publisher(self.path_topic, Path, queue_size=10)
-        
+
         rospy.Subscriber(self.map_topic, OccupancyGrid, self.cb_map)
         rospy.loginfo(f"[binary_map_node] Listening on {self.map_topic}")
-        
+
         self.latest_msg = None
         self.timer = rospy.Timer(rospy.Duration(1.0), self.publish_path)
 
@@ -310,14 +325,14 @@ class BinaryMapConverter:
         if self.map is None:
             return
 
-        if self.path is None:    
+        if self.path is None:
             env = GridWorld(
                 self.map,
                 allow_diagonal=False,
                 shaping="euclidean",
                 reward_step=-0.0001,
             )
-            
+
             print(f"{env.grid}\n")
 
             agent = QLearningAgent(
@@ -329,10 +344,11 @@ class BinaryMapConverter:
                 epsilon_decay=0.9,
                 schedule="mix",
             )
-            
+
             episodes = 100
 
-            durations = train(env, agent, episodes=episodes, print_every=int(episodes/100))
+            durations = train(env, agent, episodes=episodes,
+                              print_every=int(episodes/100))
 
             path = greedy_path(env, agent)
             self.path = self.densify_path_msg(
@@ -346,7 +362,7 @@ class BinaryMapConverter:
 
     def cb_map(self, msg: OccupancyGrid):
         """Convert OccupancyGrid → binary numpy array → republish."""
-        width  = msg.info.width
+        width = msg.info.width
         height = msg.info.height
         data_np = np.array(msg.data, dtype=np.int16).reshape((height, width))
         self.resolution = msg.info.resolution
@@ -358,15 +374,15 @@ class BinaryMapConverter:
 
         binary_grid = (data_np >= self.occ_threshold).astype(np.int8)
         self.map = binary_grid
-        
-        print(f"Binary grid:\n{binary_grid}")
-    
-    def densify_path_msg(self, cell_path,
-                     resolution: float,
-                     points_per_meter: float,
-                     frame_id: str = "map") -> Path:
 
-        path                = Path()
+        print(f"Binary grid:\n{binary_grid}")
+
+    def densify_path_msg(self, cell_path,
+                         resolution: float,
+                         points_per_meter: float,
+                         frame_id: str = "map") -> Path:
+
+        path = Path()
         path.header.frame_id = frame_id
 
         if len(cell_path) < 2:
@@ -376,34 +392,36 @@ class BinaryMapConverter:
             x0, y0 = (c0 + 0.5) * resolution, (r0 + 0.5) * resolution
             x1, y1 = (c1 + 0.5) * resolution, (r1 + 0.5) * resolution
 
-            dx,  dy  = x1 - x0, y1 - y0
-            seg_len  = math.hypot(dx, dy)
-            yaw      = math.atan2(dy, dx)
+            dx,  dy = x1 - x0, y1 - y0
+            seg_len = math.hypot(dx, dy)
+            yaw = math.atan2(dy, dx)
 
             n_pts = max(1, int(seg_len * points_per_meter))
             for k in range(n_pts):
                 t = k / n_pts
-                pose                  = PoseStamped()
-                pose.pose.position.x  = x0 + t * dx
-                pose.pose.position.y  = y0 + t * dy
+                pose = PoseStamped()
+                pose.pose.position.x = x0 + t * dx
+                pose.pose.position.y = y0 + t * dy
                 pose.pose.orientation.z, pose.pose.orientation.w = (
                     math.sin(yaw / 2.0), math.cos(yaw / 2.0)
                 )
                 path.poses.append(pose)
 
         r_g, c_g = cell_path[-1]
-        pose_g                  = PoseStamped()
-        pose_g.pose.position.x  = (c_g + 0.5) * resolution
-        pose_g.pose.position.y  = (r_g + 0.5) * resolution
+        pose_g = PoseStamped()
+        pose_g.pose.position.x = (c_g + 0.5) * resolution
+        pose_g.pose.position.y = (r_g + 0.5) * resolution
         pose_g.pose.orientation.w = 1.0
         path.poses.append(pose_g)
 
         return path
-    
+
+
 def main():
     rospy.init_node("binary_map_node")
     BinaryMapConverter()
     rospy.spin()
+
 
 if __name__ == "__main__":
     main()
