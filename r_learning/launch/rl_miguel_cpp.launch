@@ -1,0 +1,3 @@
+<launch>
+    <node pkg="r_learning" type="rl_miguel" name="rl_miguel_node" output="screen"/>
+</launch>
