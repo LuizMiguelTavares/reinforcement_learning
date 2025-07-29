@@ -28,49 +28,63 @@ class GridWorld:
         obstacle_mode: str = "cluster",            # 'random' | 'cluster'
         seed: Optional[int] = None,
         cluster_size: int = 5,
+        grid_map: Optional[np.ndarray] = None,
         start: Optional[Tuple[int, int]] = None,
         goal: Optional[Tuple[int, int]] = None,
-        allow_diagonal: bool = False,
-        diagonal_cost: Optional[float] = None,
+        allow_diagonal: bool = True,
         reward_goal: float = 100.0,
-        reward_obstacle: float = -10.0,
+        reward_obstacle: float = -100.0,
         reward_step: float = -0.001,
+        use_reward_shaping: bool = False,
         shaping: Optional[str] = "euclidean",      # None | 'manhattan' | 'euclidean'
         allow_diagonal_obstacle: bool = False,
-        safety_nearby_obstacle: bool = True,
-        min_dist_nearby_obstacle: int = 2,
-        safety_nearby_obstacle_gain: float = 0.6,
-        energy_consumption_gain: float = 0.6,
+        min_dist_nearby_obstacle: int = 3,
+        safety_nearby_obstacle_gain: float = 0.0,
+        energy_consumption_gain: float = 0.0,
     ):
-        self.width, self.height = width, height
-        self.obstacle_density = obstacle_density
-        self.obstacle_mode = obstacle_mode
-        self.cluster_size = cluster_size
-        self.rng = np.random.RandomState(seed)
+        
+        # Build grid --------------------------------------------------
+        if grid_map is not None:
+            self.grid = grid_map.copy()
+            self.width, self.height = self.grid.shape[1], self.grid.shape[0]
+        else:
+            self.width, self.height = width, height
+            self.obstacle_density = obstacle_density
+            self.obstacle_mode = obstacle_mode
+            self.cluster_size = cluster_size
+            self.rng = np.random.RandomState(seed)
+            self.grid = np.zeros((height, width), dtype=np.int8)
+            self._populate_obstacles()
+        
+        self.start = tuple(start) if start else (0, 0)
+        self.goal = tuple(goal) if goal else (self.height - 1, self.width - 1)
+        self.grid[self.start] = 0
+        self.grid[self.goal] = 0
+        self.grid_explored = np.zeros_like(self.grid, dtype=np.int32)
+        self.grid_explored[self.start] = 1
+
+        # Basic Rewards
         self.reward_goal = reward_goal
         self.reward_obstacle = reward_obstacle
         self.reward_step = reward_step
+
+        # Reward shaping
+        self.use_reward_shaping = use_reward_shaping
         self.shaping = shaping
-        self.allow_diag = allow_diagonal
-        self.diag_cost = (
-            diagonal_cost if diagonal_cost is not None
-            else (math.sqrt(2) if allow_diagonal else 1.0)
-        )
-        self.allow_diag_obstacle = allow_diagonal_obstacle
-        self.safety_nearby_obstacle = safety_nearby_obstacle
-        self.min_dist_nearby_obstacle = min_dist_nearby_obstacle
+
+        # Safety
         self.safety_nearby_obstacle_gain = safety_nearby_obstacle_gain
-        self.energy_consumption_gain = energy_consumption_gain
+        self.safety_nearby_obstacle = (True if safety_nearby_obstacle_gain > 0 else False)
+        self.min_dist_nearby_obstacle = min_dist_nearby_obstacle
+        
+        # Energy consumption
+        self.energy_consumption_gain = abs(energy_consumption_gain)
 
-        self.angle = -1
+        self.allow_diag = allow_diagonal
+        self.diag_cost = -abs(math.sqrt(2)*reward_step)
+        self.allow_diag_obstacle = allow_diagonal_obstacle
 
-        # Build grid --------------------------------------------------
-        self.grid = np.zeros((height, width), dtype=np.int8)  # 0 free, 1 obstacle
-        self._populate_obstacles()
-        self.start = tuple(start) if start else (0, 0)
-        self.goal = tuple(goal) if goal else (height - 1, width - 1)
-        self.grid[self.start] = 0
-        self.grid[self.goal] = 0
+        self.angle = -1 # Angle initialization
 
         if self.safety_nearby_obstacle:
             self.precompute_nearby_obstacles_reward()
@@ -114,12 +128,21 @@ class GridWorld:
     # -----------------------------------------------------------------
     def reset(self) -> Tuple[int, int]:
         self.agent_pos = self.start
+        self.angle = -1
         return self.agent_pos
 
     def step(self, action: int) -> Tuple[Tuple[int, int], float, bool]:
         r, c = self.agent_pos
         dr, dc = self.actions[action]
         nr, nc = r + dr, c + dc
+
+        # invalid move (wall or obstacle) -----------------------------
+        if not (0 <= nr < self.height and 0 <= nc < self.width) or self.grid[nr, nc] == 1:
+            next_state = (r, c) # Stay in place
+            reward, done = self.reward_obstacle, False
+            return next_state, reward, done
+
+        self.grid_explored[nr, nc] += 1
 
         angle = math.atan2(dr, dc)
         turn_angle = 0.0
@@ -145,27 +168,20 @@ class GridWorld:
                 next_state = (r, c)
                 reward, done = self.reward_obstacle, False
                 return next_state, reward, done
-
-        # invalid move (wall or obstacle) -----------------------------
-        if not (0 <= nr < self.height and 0 <= nc < self.width) or self.grid[nr, nc] == 1:
-            next_state = (r, c)
-            reward, done = self.reward_obstacle, False
+    
+        next_state = (nr, nc)
+        self.agent_pos = next_state
+        if next_state == self.goal:
+            reward, done = self.reward_goal, True
         else:
-            next_state = (nr, nc)
-            self.agent_pos = next_state
-            if next_state == self.goal:
-                reward, done = self.reward_goal, True
+            if action >=4 and self.allow_diag:
+                reward = self.diag_cost
             else:
-                step_pen = (
-                    -abs(self.diag_cost)
-                    if self.allow_diag and dr and dc and self.reward_step < 0
-                    else self.reward_step
-                )
-                reward, done = step_pen, False
+                reward = self.reward_step
+            done = False
 
         # potential-based shaping ------------------------------------
-        # Estou comentando para teste
-        if self.shaping in ("manhattan", "euclidean"):
+        if self.shaping in ("manhattan", "euclidean") and self.use_reward_shaping:
             def dist(s):
                 if self.shaping == "manhattan":
                     return abs(s[0] - self.goal[0]) + abs(s[1] - self.goal[1])
@@ -176,6 +192,8 @@ class GridWorld:
         if self.safety_nearby_obstacle:
             if next_state in self.nearby_obstacles_reward:
                 reward += self.nearby_obstacles_reward[next_state]
+            else:
+                print(f"Warning: {next_state} not precomputed in nearby obstacles reward.")
         
         reward += -self.energy_consumption_gain * turn_angle / math.pi  # Penalty for turning
 
@@ -315,79 +333,139 @@ def greedy_path(env: GridWorld, agent: QLearningAgent, limit: int = 1000):
     agent.epsilon = backup
     return path
 
-
 # ---------------------------------------------------------------------
 # Combined visualisation
 # ---------------------------------------------------------------------
-def path_image(env: GridWorld, path: List[Tuple[int, int]]):
+def draw_q_heatmap(ax, env, agent):
+    V = agent.Q.max(axis=2)  # best over actions
+    cmap_val = "turbo" if "turbo" in plt.colormaps() else "plasma"
+    V_mask = np.ma.masked_where(env.grid == 1, V)
+    im = ax.imshow(V_mask, cmap=cmap_val, origin="lower", interpolation="nearest")
+    plt.colorbar(im, ax=ax, fraction=0.046)
+
+    ax.imshow(np.ma.masked_where(env.grid == 0, env.grid),
+              cmap="gray_r", origin="lower", vmin=0, vmax=1, alpha=1, interpolation="nearest")
+
+    ax.scatter(env.start[1], env.start[0], marker="o", c="lime", s=100, zorder=5)
+    ax.scatter(env.goal[1],  env.goal[0],  marker="*", c="red",  s=150, zorder=5)
+    ax.set_title("State Values")
+    ax.set_xticks([]); ax.set_yticks([])
+
+def path_image(env: GridWorld, path):
     img = np.ones((env.height, env.width, 3))
     img[env.grid == 1] = (0, 0, 0)
-    img[env.start] = (0, 1, 0)
-    img[env.goal] = (1, 0, 0)
-    for r, c in path:
-        if (r, c) not in (env.start, env.goal) and env.grid[r, c] == 0:
+
+    sr, sc = env.start
+    gr, gc = env.goal
+    img[sr, sc] = (0, 1, 0)   # start (green)
+    img[gr, gc] = (1, 0, 0)   # goal  (red)
+
+    for step in path:
+        r, c = step[:2]  # supports (r,c) or (r,c,angle)
+        if (r, c) not in ((sr, sc), (gr, gc)) and env.grid[r, c] == 0:
             img[r, c] = (0.5, 0.5, 1)
     return img
 
 
-def draw_q_heatmap(ax, env: GridWorld, agent: QLearningAgent):
-    V = agent.Q.max(axis=2)
-    best = agent.Q.argmax(axis=2)
-    Y, X = np.mgrid[0 : env.height, 0 : env.width]
-    U, Vv = np.zeros_like(V), np.zeros_like(V)
-    for r in range(env.height):
-        for c in range(env.width):
-            if env.grid[r, c] == 1:
-                continue
-            dr, dc = env.actions[best[r, c]]
-            U[r, c], Vv[r, c] = dc, -dr
+# def combined_vis(env: GridWorld, agent: QLearningAgent, path):
+#     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
 
-    cmap_val = "turbo" if "turbo" in plt.colormaps() else "plasma"
-    V_mask = np.ma.masked_where(env.grid == 1, V)
-    im = ax.imshow(V_mask, cmap=cmap_val, origin="upper")
-    plt.colorbar(im, ax=ax, fraction=0.046)
+#     # --- Left: path + angles, Cartesian (0,0 bottom-left) ---
+#     img = path_image(env, path)
+#     ax1.imshow(img, origin="lower", interpolation='nearest')
+#     # draw_path_with_angles(ax1, env, path, every=1, scale=0.35)
 
+#     ax1.set_xlim([-0.5, env.width-0.5])
+#     ax1.set_ylim([-0.5, env.height-0.5])
+#     ax1.set_xlabel("x (cols)")
+#     ax1.set_ylabel("y (rows)")
+#     ax1.set_title("Greedy Path + Orientation (Cartesian view)")
+#     ax1.set_xticks(range(env.width))
+#     ax1.set_yticks(range(env.height))
+
+#     # --- Right: heatmap (also Cartesian) ---
+#     draw_q_heatmap(ax2, env, agent)  # inside, also use origin='lower'
+#     ax2.set_xlabel("x")
+#     ax2.set_ylabel("y")
+
+#     plt.tight_layout()
+#     plt.show()
+
+def combined_vis(env: GridWorld, agent: QLearningAgent, path):
+    fig, axs = plt.subplots(2, 2, figsize=(10, 10))
+
+    # --- (0,0) Greedy path ------------------------------------------
+    img = path_image(env, path)
+    axs[0, 0].imshow(img, origin="lower", interpolation="nearest")
+    axs[0, 0].set_xlim([-0.5, env.width-0.5])
+    axs[0, 0].set_ylim([-0.5, env.height-0.5])
+    axs[0, 0].set_xlabel("x (cols)")
+    axs[0, 0].set_ylabel("y (rows)")
+    axs[0, 0].set_title("Greedy Path (Cartesian view)")
+    axs[0, 0].set_xticks(range(env.width))
+    axs[0, 0].set_yticks(range(env.height))
+
+    # --- (0,1) Q heatmap + greedy policy arrows ----------------------
+    draw_q_heatmap(axs[0, 1], env, agent)
+
+    # --- (1,0) Exploration (log) ------------------------------------
+    max_lin = max(1, int(env.grid_explored.max()))
+    draw_explored_heatmap(axs[1, 0], env, log_scale=True,
+                          vmin=0, vmax=np.log10(max_lin + 1))
+
+    # --- (1,1) Exploration (linear) ---------------------------------
+    draw_explored_heatmap(axs[1, 1], env, log_scale=False,
+                          vmin=0, vmax=max_lin)
+
+    plt.tight_layout()
+    plt.show()
+
+
+# ---------------------------------------------------------------------
+# Heat-map of exploration frequency
+# ---------------------------------------------------------------------
+def draw_explored_heatmap(
+    ax,
+    env: GridWorld,
+    log_scale: bool = True,
+    vmin: Optional[float] = None,
+    vmax: Optional[float] = None,
+) -> None:
+    # 1) Prepare data
+    explored = env.grid_explored.astype(float)
+    if log_scale:
+        explored = np.log10(explored + 1)   # keeps zeros at 0
+
+    # 2) Mask obstacles
+    explored_mask = np.ma.masked_where(env.grid == 1, explored)
+
+    # 3) Heatmap
+    im = ax.imshow(
+        explored_mask,
+        cmap="inferno",
+        origin="lower",
+        interpolation="nearest",
+        vmin=vmin,
+        vmax=vmax,
+    )
+    plt.colorbar(im, ax=ax, fraction=0.046,
+                 label="Visits (log₁₀)" if log_scale else "Visits")
+
+    # 4) Obstacles + markers
     ax.imshow(
         np.ma.masked_where(env.grid == 0, env.grid),
-        cmap="gray_r",              # reversed gray => obstacle black
-        origin="upper",
+        cmap="gray_r",
+        origin="lower",
         vmin=0,
         vmax=1,
         interpolation="nearest",
         alpha=1,
     )
-
-    free = env.grid.flatten() == 0
-    ax.quiver(
-        X.flatten()[free],
-        Y.flatten()[free],
-        U.flatten()[free],
-        Vv.flatten()[free],
-        color="white",
-        scale=env.width * 1.5,
-        pivot="mid",
-        headwidth=4,
-        headlength=5,
-        width=0.002,
-    )
-
     ax.scatter(env.start[1], env.start[0], marker="o", c="lime", s=100, zorder=5)
-    ax.scatter(env.goal[1], env.goal[0], marker="*", c="red", s=150, zorder=5)
-    ax.set_title("State Values + Greedy Policy")
-    ax.set_xticks([]), ax.set_yticks([])
+    ax.scatter(env.goal[1],  env.goal[0],  marker="*", c="red",  s=150, zorder=5)
 
-
-def combined_vis(env: GridWorld, agent: QLearningAgent, path):
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
-
-    ax1.imshow(path_image(env, path), origin="upper")
-    ax1.set_title("Greedy Path")
-    ax1.set_xticks([]), ax1.set_yticks([])
-
-    draw_q_heatmap(ax2, env, agent)
-    plt.tight_layout()
-    plt.show()
-
+    ax.set_title("Exploration Heat-map (log)" if log_scale else "Exploration Heat-map (linear)")
+    ax.set_xticks([]); ax.set_yticks([])
 
 # ---------------------------------------------------------------------
 # MAIN
@@ -396,22 +474,36 @@ if __name__ == "__main__":
     width = 9
     height = 7
 
-    # importing a grid world from pickle file
-    f = open("obs_grids/obs1_artigo.pkl", "rb")
-    obstacle_map = pickle.load(f)
+    obstacle_map = np.load("obs_grids/map3_paper.npy", allow_pickle=False)
     print("Obstacle map loaded successfully.")
+    obstacle_map[:] = obstacle_map[::-1, :]
+
+    # obstacle_map = obstacle_map.T
+    print(obstacle_map)
+    use_reward_shaping = True
+
+    min_dist_nearby_obstacle = 3
+    safety_nearby_obstacle_gain = 1
+    energy_consumption_gain = 0.6
+    reward_step = -0.1
+
+    allow_diagonal_obstacle = False
 
     env = GridWorld(
         width=width,
         height=height,
         obstacle_density=0.22,
         obstacle_mode="cluster",
+        grid_map=obstacle_map,
         seed=30,
         allow_diagonal=True,
+        allow_diagonal_obstacle=allow_diagonal_obstacle,
         shaping="euclidean",
         reward_step=-0.001,
-        safety_nearby_obstacle_gain=0.6,
-        energy_consumption_gain=0.6,
+        safety_nearby_obstacle_gain=safety_nearby_obstacle_gain,
+        min_dist_nearby_obstacle=min_dist_nearby_obstacle,
+        energy_consumption_gain=energy_consumption_gain,
+        use_reward_shaping=use_reward_shaping,
     )
     
     print(f"{env.grid}\n")
@@ -426,7 +518,7 @@ if __name__ == "__main__":
         schedule="mix",
     )
     
-    episodes = 100
+    episodes = 1000
 
     durations = train(env, agent, episodes=episodes, print_every=int(episodes/100))
 
