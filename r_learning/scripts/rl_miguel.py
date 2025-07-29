@@ -21,6 +21,7 @@ class GridWorld:
         reward_obstacle: float = -10.0,
         reward_step: float = -0.001,
         shaping: Optional[str] = "euclidean",      # None | 'manhattan' | 'euclidean'
+        allow_diagonal_obstacle: bool = False,
     ):
         # self.width, self.height = width, height
         self.width, self.height = map.shape[1], map.shape[0]
@@ -37,6 +38,7 @@ class GridWorld:
             diagonal_cost if diagonal_cost is not None
             else (math.sqrt(2) if allow_diagonal else 1.0)
         )
+        self.allow_diag_obstacle = allow_diagonal_obstacle
 
         # Build grid --------------------------------------------------
         self.grid = map.astype(np.int8) 
@@ -92,10 +94,20 @@ class GridWorld:
         dr, dc = self.actions[action]
         nr, nc = r + dr, c + dc
 
+        if not self.allow_diag_obstacle and self.allow_diag:
+            corner1 = self.grid[nr, c]
+            corner2 = self.grid[r, nc]
+
+            if corner1 == 1 or corner2 == 1:
+                next_state = (r, c)
+                reward, done = self.reward_obstacle, False
+                return next_state, reward, done
+            
         # invalid move (wall or obstacle) -----------------------------
         if not (0 <= nr < self.height and 0 <= nc < self.width) or self.grid[nr, nc] == 1:
             next_state = (r, c)
             reward, done = self.reward_obstacle, False
+            return next_state, reward, done
         else:
             next_state = (nr, nc)
             self.agent_pos = next_state
@@ -109,8 +121,6 @@ class GridWorld:
                 )
                 reward, done = step_pen, False
 
-        # potential-based shaping ------------------------------------
-        # Estou comentando para teste
         if self.shaping in ("manhattan", "euclidean"):
             def dist(s):
                 if self.shaping == "manhattan":
@@ -220,72 +230,72 @@ def greedy_path(env: GridWorld, agent: QLearningAgent, limit: int = 1000):
     agent.epsilon = backup
     return path
 
-def path_image(env: GridWorld, path: List[Tuple[int, int]]):
-    img = np.ones((env.height, env.width, 3))
-    img[env.grid == 1] = (0, 0, 0)
-    img[env.start] = (0, 1, 0)
-    img[env.goal] = (1, 0, 0)
-    for r, c in path:
-        if (r, c) not in (env.start, env.goal) and env.grid[r, c] == 0:
-            img[r, c] = (0.5, 0.5, 1)
-    return img
+# def path_image(env: GridWorld, path: List[Tuple[int, int]]):
+#     img = np.ones((env.height, env.width, 3))
+#     img[env.grid == 1] = (0, 0, 0)
+#     img[env.start] = (0, 1, 0)
+#     img[env.goal] = (1, 0, 0)
+#     for r, c in path:
+#         if (r, c) not in (env.start, env.goal) and env.grid[r, c] == 0:
+#             img[r, c] = (0.5, 0.5, 1)
+#     return img
 
-def draw_q_heatmap(ax, env: GridWorld, agent: QLearningAgent):
-    V = agent.Q.max(axis=2)
-    best = agent.Q.argmax(axis=2)
-    Y, X = np.mgrid[0 : env.height, 0 : env.width]
-    U, Vv = np.zeros_like(V), np.zeros_like(V)
-    for r in range(env.height):
-        for c in range(env.width):
-            if env.grid[r, c] == 1:
-                continue
-            dr, dc = env.actions[best[r, c]]
-            U[r, c], Vv[r, c] = dc, -dr
+# def draw_q_heatmap(ax, env: GridWorld, agent: QLearningAgent):
+#     V = agent.Q.max(axis=2)
+#     best = agent.Q.argmax(axis=2)
+#     Y, X = np.mgrid[0 : env.height, 0 : env.width]
+#     U, Vv = np.zeros_like(V), np.zeros_like(V)
+#     for r in range(env.height):
+#         for c in range(env.width):
+#             if env.grid[r, c] == 1:
+#                 continue
+#             dr, dc = env.actions[best[r, c]]
+#             U[r, c], Vv[r, c] = dc, -dr
 
-    cmap_val = "turbo" if "turbo" in plt.colormaps() else "plasma"
-    V_mask = np.ma.masked_where(env.grid == 1, V)
-    im = ax.imshow(V_mask, cmap=cmap_val, origin="upper")
-    plt.colorbar(im, ax=ax, fraction=0.046)
+#     cmap_val = "turbo" if "turbo" in plt.colormaps() else "plasma"
+#     V_mask = np.ma.masked_where(env.grid == 1, V)
+#     im = ax.imshow(V_mask, cmap=cmap_val, origin="upper")
+#     plt.colorbar(im, ax=ax, fraction=0.046)
 
-    ax.imshow(
-        np.ma.masked_where(env.grid == 0, env.grid),
-        cmap="gray_r",              # reversed gray => obstacle black
-        origin="upper",
-        vmin=0,
-        vmax=1,
-        interpolation="nearest",
-        alpha=1,
-    )
+#     ax.imshow(
+#         np.ma.masked_where(env.grid == 0, env.grid),
+#         cmap="gray_r",              # reversed gray => obstacle black
+#         origin="upper",
+#         vmin=0,
+#         vmax=1,
+#         interpolation="nearest",
+#         alpha=1,
+#     )
 
-    free = env.grid.flatten() == 0
-    ax.quiver(
-        X.flatten()[free],
-        Y.flatten()[free],
-        U.flatten()[free],
-        Vv.flatten()[free],
-        color="white",
-        scale=env.width * 1.5,
-        pivot="mid",
-        headwidth=4,
-        headlength=5,
-        width=0.002,
-    )
+#     free = env.grid.flatten() == 0
+#     ax.quiver(
+#         X.flatten()[free],
+#         Y.flatten()[free],
+#         U.flatten()[free],
+#         Vv.flatten()[free],
+#         color="white",
+#         scale=env.width * 1.5,
+#         pivot="mid",
+#         headwidth=4,
+#         headlength=5,
+#         width=0.002,
+#     )
 
-    ax.scatter(env.start[1], env.start[0], marker="o", c="lime", s=100, zorder=5)
-    ax.scatter(env.goal[1], env.goal[0], marker="*", c="red", s=150, zorder=5)
-    ax.set_title("State Values + Greedy Policy")
-    ax.set_xticks([]), ax.set_yticks([])
+#     ax.scatter(env.start[1], env.start[0], marker="o", c="lime", s=100, zorder=5)
+#     ax.scatter(env.goal[1], env.goal[0], marker="*", c="red", s=150, zorder=5)
+#     ax.set_title("State Values + Greedy Policy")
+#     ax.set_xticks([]), ax.set_yticks([])
 
-def combined_vis(env: GridWorld, agent: QLearningAgent, path):
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+# def combined_vis(env: GridWorld, agent: QLearningAgent, path):
+#     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
 
-    ax1.imshow(path_image(env, path), origin="upper")
-    ax1.set_title("Greedy Path")
-    ax1.set_xticks([]), ax1.set_yticks([])
+#     ax1.imshow(path_image(env, path), origin="upper")
+#     ax1.set_title("Greedy Path")
+#     ax1.set_xticks([]), ax1.set_yticks([])
 
-    draw_q_heatmap(ax2, env, agent)
-    plt.tight_layout()
-    plt.show()
+#     draw_q_heatmap(ax2, env, agent)
+#     plt.tight_layout()
+#     plt.show()
 
 class BinaryMapConverter:
     def __init__(self):
