@@ -14,6 +14,7 @@ from typing import List, Tuple, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pickle
 
 # ---------------------------------------------------------------------
 # GridWorld environment
@@ -35,6 +36,11 @@ class GridWorld:
         reward_obstacle: float = -10.0,
         reward_step: float = -0.001,
         shaping: Optional[str] = "euclidean",      # None | 'manhattan' | 'euclidean'
+        allow_diagonal_obstacle: bool = False,
+        safety_nearby_obstacle: bool = True,
+        min_dist_nearby_obstacle: int = 2,
+        safety_nearby_obstacle_gain: float = 0.6,
+        energy_consumption_gain: float = 0.6,
     ):
         self.width, self.height = width, height
         self.obstacle_density = obstacle_density
@@ -50,6 +56,13 @@ class GridWorld:
             diagonal_cost if diagonal_cost is not None
             else (math.sqrt(2) if allow_diagonal else 1.0)
         )
+        self.allow_diag_obstacle = allow_diagonal_obstacle
+        self.safety_nearby_obstacle = safety_nearby_obstacle
+        self.min_dist_nearby_obstacle = min_dist_nearby_obstacle
+        self.safety_nearby_obstacle_gain = safety_nearby_obstacle_gain
+        self.energy_consumption_gain = energy_consumption_gain
+
+        self.angle = -1
 
         # Build grid --------------------------------------------------
         self.grid = np.zeros((height, width), dtype=np.int8)  # 0 free, 1 obstacle
@@ -58,6 +71,9 @@ class GridWorld:
         self.goal = tuple(goal) if goal else (height - 1, width - 1)
         self.grid[self.start] = 0
         self.grid[self.goal] = 0
+
+        if self.safety_nearby_obstacle:
+            self.precompute_nearby_obstacles_reward()
 
         # Action set --------------------------------------------------
         if allow_diagonal:
@@ -105,6 +121,31 @@ class GridWorld:
         dr, dc = self.actions[action]
         nr, nc = r + dr, c + dc
 
+        angle = math.atan2(dr, dc)
+        turn_angle = 0.0
+
+        if self.angle == -1:
+            turn_angle = 0.0
+            self.angle = math.atan2(dr, dc)
+        else:
+            turn_angle = angle - self.angle
+            turn_angle = (turn_angle + math.pi) % (2 * math.pi) - math.pi
+
+        if not self.allow_diag_obstacle and self.allow_diag:
+            try:
+                corner1 = self.grid[nr, c]
+            except IndexError:
+                corner1 = 0 # Não vou contar valores fora do grid como obstáculos
+            try:
+                corner2 = self.grid[r, nc]
+            except IndexError:
+                corner2 = 0
+
+            if corner1 == 1 or corner2 == 1:
+                next_state = (r, c)
+                reward, done = self.reward_obstacle, False
+                return next_state, reward, done
+
         # invalid move (wall or obstacle) -----------------------------
         if not (0 <= nr < self.height and 0 <= nc < self.width) or self.grid[nr, nc] == 1:
             next_state = (r, c)
@@ -130,8 +171,40 @@ class GridWorld:
                     return abs(s[0] - self.goal[0]) + abs(s[1] - self.goal[1])
                 return math.hypot(s[0] - self.goal[0], s[1] - self.goal[1])
             reward += dist((r, c)) - dist(next_state)
+        
+        # nearby obstacles safety check ------------------------------
+        if self.safety_nearby_obstacle:
+            if next_state in self.nearby_obstacles_reward:
+                reward += self.nearby_obstacles_reward[next_state]
+        
+        reward += -self.energy_consumption_gain * turn_angle / math.pi  # Penalty for turning
 
         return next_state, reward, done
+    
+    def precompute_nearby_obstacles_reward(self) -> None:
+        """Precompute nearby obstacles for safety checks."""
+        self.nearby_obstacles_reward = {}
+        for r in range(self.height):
+            for c in range(self.width):
+                if self.grid[r, c] == 1:
+                    continue
+                reward = 0.0
+                for dr in range(-self.min_dist_nearby_obstacle, self.min_dist_nearby_obstacle + 1):
+                    for dc in range(-self.min_dist_nearby_obstacle, self.min_dist_nearby_obstacle + 1):
+                        if self.shaping == "manhattan":
+                            distance = abs(dr) + abs(dc)
+                        elif self.shaping == "euclidean":
+                            distance = math.hypot(dr, dc)
+                        else:
+                            distance = math.hypot(dr, dc) # Euclidean distance default
+                        
+                        if distance > self.min_dist_nearby_obstacle:
+                            continue
+
+                        nr, nc = r + dr, c + dc
+                        if 0 <= nr < self.height and 0 <= nc < self.width and self.grid[nr, nc] == 1:
+                            reward += distance
+                self.nearby_obstacles_reward[(r, c)] = -reward * self.safety_nearby_obstacle_gain
 
 
 # ---------------------------------------------------------------------
@@ -321,16 +394,24 @@ def combined_vis(env: GridWorld, agent: QLearningAgent, path):
 # ---------------------------------------------------------------------
 if __name__ == "__main__":
     width = 9
-    height = 7                     
+    height = 7
+
+    # importing a grid world from pickle file
+    f = open("obs_grids/obs1_artigo.pkl", "rb")
+    obstacle_map = pickle.load(f)
+    print("Obstacle map loaded successfully.")
+
     env = GridWorld(
         width=width,
         height=height,
         obstacle_density=0.22,
         obstacle_mode="cluster",
         seed=30,
-        allow_diagonal=False,
+        allow_diagonal=True,
         shaping="euclidean",
-        reward_step=-0.0001,
+        reward_step=-0.001,
+        safety_nearby_obstacle_gain=0.6,
+        energy_consumption_gain=0.6,
     )
     
     print(f"{env.grid}\n")
@@ -350,5 +431,5 @@ if __name__ == "__main__":
     durations = train(env, agent, episodes=episodes, print_every=int(episodes/100))
 
     path = greedy_path(env, agent)
-    print(path)
+    # print(path)
     combined_vis(env, agent, path)
