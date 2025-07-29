@@ -13,8 +13,8 @@ find_package(catkin REQUIRED COMPONENTS
   nav_msgs
   visualization_msgs
   tf2
-  tf2_ros                          # ← aqui!
-  tf2_geometry_msgs                # ← se usar tf2::doTransform etc.
+  tf2_ros
+  tf2_geometry_msgs
 )
 
 catkin_package(
@@ -31,3 +31,7 @@ include_directories(
 
 add_executable(differential_control src/differential_control.cpp)
 target_link_libraries(differential_control ${catkin_LIBRARIES})
+
+add_executable(rl_miguel src/rl_miguel.cpp)
+target_link_libraries(rl_miguel ${catkin_LIBRARIES})
+add_dependencies(rl_miguel ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
