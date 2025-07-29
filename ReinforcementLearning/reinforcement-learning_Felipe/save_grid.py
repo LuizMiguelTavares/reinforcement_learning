@@ -1,13 +1,13 @@
 # save_grid.py
 
-import pickle
 import os
-from draw_obs_grid import draw_obs_grid
 import numpy as np
+from draw_obs_grid import draw_obs_grid
 
 if __name__ == "__main__":
-    GRID_WIDTH = 9
-    GRID_HEIGHT = 7
+    GRID_WIDTH = 13 # X
+    GRID_HEIGHT = 13 # Y
+    
 
     print(f"Abrindo grade interativa de {GRID_WIDTH}x{GRID_HEIGHT}...")
 
@@ -17,20 +17,16 @@ if __name__ == "__main__":
     print(mapa_de_obstaculos)
 
     output_dir = "obs_grids"
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
 
-    file_path = os.path.join(output_dir, "mapa_de_obstaculos.pkl")
-
-    with open(file_path, 'wb') as f:
-        pickle.dump(mapa_de_obstaculos, f)
+    file_path = os.path.join(output_dir, "mapa_de_obstaculos.npy")
+    np.save(file_path, mapa_de_obstaculos)  # <-- trocado
 
     print(f"\nMatriz salva com sucesso em: {file_path}")
 
     print("\n--- Verificação ---")
     try:
-        with open(file_path, 'rb') as f:
-            mapa_carregado = pickle.load(f)
+        mapa_carregado = np.load(file_path, allow_pickle=False)
         print("Arquivo carregado com sucesso. Conteúdo:")
         print(mapa_carregado)
 
