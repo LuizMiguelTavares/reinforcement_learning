@@ -130,6 +130,16 @@ class GridWorld:
         self.agent_pos = self.start
         self.angle = -1
         return self.agent_pos
+    
+    def reset_new_position(self, pos: Tuple[int, int]) -> bool:
+        """Reset the agent to a new position."""
+        if pos[0] < 0 or pos[0] >= self.height or pos[1] < 0 or pos[1] >= self.width:
+            raise ValueError("Position out of bounds.")
+        if self.grid[pos] == 1:
+            return False
+        self.agent_pos = pos
+        self.angle = -1
+        return True
 
     def step(self, action: int) -> Tuple[Tuple[int, int], float, bool]:
         r, c = self.agent_pos
@@ -281,14 +291,32 @@ def train(
     window: int = 100,
     print_every: int = 100,
     threshold: float = 0.8,
+    change_start_percentage: int = 0.2,
 ):
     rewards, successes, ep_durations = deque(maxlen=window), deque(maxlen=window), []
     t_start = time.perf_counter()
 
+    if change_start_percentage > 1:
+        print("Warning: change_start_percentage should be between 0 and 1. Setting to 0.")
+        change_start_percentage = 0
+
+    so = 0
+    sn = 0
+
     for ep in range(1, episodes + 1):
         ep_begin = time.perf_counter()
-        s, tot, done = env.reset(), 0.0, False
 
+        if change_start_percentage <= np.random.rand():
+            s, tot, done = env.reset(), 0.0, False
+            so += 1
+        else:
+            r, c = np.random.randint(0, env.height), np.random.randint(0, env.width)
+            while not env.reset_new_position((r, c)):
+                r, c = np.random.randint(0, env.height), np.random.randint(0, env.width)
+            
+            s, tot, done = env.agent_pos, 0.0, False
+            sn += 1
+            
         while not done:
             a = agent.choose_action(s)
             s2, r, done = env.step(a)
@@ -314,6 +342,8 @@ def train(
     total_time = time.perf_counter() - t_start
     print(f"\nTraining finished in {total_time:.2f} seconds "
           f"({total_time/episodes:.3f} s/episode on average).")
+
+    print(f"Start changes: {(sn/episodes)*100:.1f}%, No start changes: {so/episodes*100:.1f}%")
 
     return list(ep_durations) 
 
@@ -366,33 +396,8 @@ def path_image(env: GridWorld, path):
             img[r, c] = (0.5, 0.5, 1)
     return img
 
-
-# def combined_vis(env: GridWorld, agent: QLearningAgent, path):
-#     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
-
-#     # --- Left: path + angles, Cartesian (0,0 bottom-left) ---
-#     img = path_image(env, path)
-#     ax1.imshow(img, origin="lower", interpolation='nearest')
-#     # draw_path_with_angles(ax1, env, path, every=1, scale=0.35)
-
-#     ax1.set_xlim([-0.5, env.width-0.5])
-#     ax1.set_ylim([-0.5, env.height-0.5])
-#     ax1.set_xlabel("x (cols)")
-#     ax1.set_ylabel("y (rows)")
-#     ax1.set_title("Greedy Path + Orientation (Cartesian view)")
-#     ax1.set_xticks(range(env.width))
-#     ax1.set_yticks(range(env.height))
-
-#     # --- Right: heatmap (also Cartesian) ---
-#     draw_q_heatmap(ax2, env, agent)  # inside, also use origin='lower'
-#     ax2.set_xlabel("x")
-#     ax2.set_ylabel("y")
-
-#     plt.tight_layout()
-#     plt.show()
-
 def combined_vis(env: GridWorld, agent: QLearningAgent, path):
-    fig, axs = plt.subplots(2, 2, figsize=(10, 10))
+    fig, axs = plt.subplots(2, 2, figsize=(9, 9))
 
     # --- (0,0) Greedy path ------------------------------------------
     img = path_image(env, path)
@@ -518,9 +523,10 @@ if __name__ == "__main__":
         schedule="mix",
     )
     
-    episodes = 1000
+    episodes = 400
 
-    durations = train(env, agent, episodes=episodes, print_every=int(episodes/100))
+    change_start_percentage = 1
+    durations = train(env, agent, episodes=episodes, print_every=int(episodes/100), change_start_percentage=change_start_percentage)
 
     path = greedy_path(env, agent)
     # print(path)
