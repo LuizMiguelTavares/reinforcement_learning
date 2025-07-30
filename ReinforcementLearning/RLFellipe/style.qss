@@ -1,0 +1,65 @@
+/* style.qss - Stylesheet for the Application */
+
+/* General Window and Widget Style */
+QWidget {
+    background-color: #fdfdfe; /* A slightly off-white color */
+    color: #2c3e50; /* Dark and soft text color */
+    font-family: "Segoe UI", "Roboto", "Helvetica Neue", "Arial", sans-serif;
+}
+
+/* Style for Title Labels */
+QLabel#titleLabel {
+    font-size: 32px;
+    font-weight: bold;
+    color: #34495e; /* A dark grayish-blue */
+    padding-bottom: 10px;
+}
+
+/* --- Button Styles --- */
+
+/* Base style for all buttons, for consistency */
+QPushButton {
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 12px 24px;
+    font-size: 16px;
+    font-weight: bold;
+}
+
+QPushButton:hover {
+    /* Subtle elevation effect on hover */
+    border: 1px solid #bdc3c7;
+}
+
+/* Style for Navigation Buttons (class "navigation") */
+QPushButton[class="navigation"] {
+    background-color: #3498db; /* A more vivid blue */
+    color: white;
+}
+
+QPushButton[class="navigation"]:hover {
+    background-color: #2980b9; /* A darker blue */
+    border-color: #2980b9;
+}
+
+/* Style for the Grid confirmation button */
+QPushButton#confirmButton {
+    background-color: #2ecc71; /* Emerald green */
+    color: white;
+}
+
+QPushButton#confirmButton:hover {
+    background-color: #27ae60; /* A darker green */
+    border-color: #27ae60;
+}
+
+/* Style for the close button */
+QPushButton#closeButton {
+    background-color: #e74c3c; /* Alizarin red */
+    color: white;
+}
+
+QPushButton#closeButton:hover {
+    background-color: #c0392b; /* A darker red */
+    border-color: #c0392b;
+}
