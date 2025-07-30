@@ -25,9 +25,8 @@ class AppData:
     """
     grid_size: Tuple[int, int] = (10, 10)
     obstacle_map: Optional[np.ndarray] = None
-    start: Optional[Tuple[int, int]] = None
+    start: Optional[Tuple[int, int, int]] = None
     goal: Optional[Tuple[int, int, int]] = None
-    path: Optional[Tuple[int, int, int]] = None
 
 
 class MainWindow(QMainWindow):
