@@ -1,12 +1,4 @@
 #!/usr/bin/env python3
-"""
-Enhanced Q-learning Grid-World (Python 3.8+)
--------------------------------------------
-• Adaptive ε-greedy, reward shaping, 4/8-direction moves
-• Clustered/random obstacles (seeded)
-• Large grids (tested 300x300)
-• Combined visual: greedy path & value-map with arrows
-"""
 
 import math, time
 from collections import deque
@@ -14,7 +6,6 @@ from typing import List, Tuple, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pickle
 
 # ---------------------------------------------------------------------
 # GridWorld environment
@@ -29,20 +20,21 @@ class GridWorld:
         seed: Optional[int] = None,
         cluster_size: int = 5,
         grid_map: Optional[np.ndarray] = None,
-        start: Optional[Tuple[int, int]] = None,
-        goal: Optional[Tuple[int, int]] = None,
-        allow_diagonal: bool = True,
+        start: Optional[Tuple[int, int, float]] = None,
+        goal: Optional[Tuple[int, int, float]] = None,
         reward_goal: float = 100.0,
         reward_obstacle: float = -100.0,
         reward_step: float = -0.001,
         use_reward_shaping: bool = False,
         shaping: Optional[str] = "euclidean",      # None | 'manhattan' | 'euclidean'
         allow_diagonal_obstacle: bool = False,
+        allow_only_forward: bool = False,
         min_dist_nearby_obstacle: int = 3,
         safety_nearby_obstacle_gain: float = 0.0,
         energy_consumption_gain: float = 0.0,
     ):
-        
+        self.num_angles = 8
+
         # Build grid --------------------------------------------------
         if grid_map is not None:
             self.grid = grid_map.copy()
@@ -56,11 +48,12 @@ class GridWorld:
             self.grid = np.zeros((height, width), dtype=np.int8)
             self._populate_obstacles()
         
-        self.start = tuple(start) if start else (0, 0)
-        self.goal = tuple(goal) if goal else (self.height - 1, self.width - 1)
-        self.grid[self.start] = 0
-        self.grid[self.goal] = 0
-        self.grid_explored = np.zeros_like(self.grid, dtype=np.int32)
+        self.start = (0, 0, self.angle_to_idx(0.0)) if start is None else (start[0], start[1], self.angle_to_idx(start[2]))
+        self.goal  = (height - 1, width - 1, self.angle_to_idx(0.0)) if goal is None else (goal[0], goal[1], self.angle_to_idx(goal[2]))
+        self.grid[self.start[0:2]] = 0
+        self.grid[self.goal[0:2]] = 0
+
+        self.grid_explored = np.zeros((self.height, self.width, self.num_angles), dtype=np.int32)
         self.grid_explored[self.start] = 1
 
         # Basic Rewards
@@ -80,25 +73,27 @@ class GridWorld:
         # Energy consumption
         self.energy_consumption_gain = abs(energy_consumption_gain)
 
-        self.allow_diag = allow_diagonal
         self.diag_cost = -abs(math.sqrt(2)*reward_step)
         self.allow_diag_obstacle = allow_diagonal_obstacle
+        self.allow_only_forward = allow_only_forward
 
         self.angle = -1 # Angle initialization
 
         if self.safety_nearby_obstacle:
             self.precompute_nearby_obstacles_reward()
 
-        # Action set --------------------------------------------------
-        if allow_diagonal:
-            self.actions: List[Tuple[int, int]] = [
-                (-1, 0), (1, 0), (0, -1), (0, 1),
-                (-1, -1), (-1, 1), (1, -1), (1, 1)
-            ]
+        if self.allow_only_forward:
+            self.num_actions = 8
         else:
-            self.actions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
-        self.num_actions = len(self.actions)
-        self.agent_pos: Optional[Tuple[int, int]] = None
+            self.num_actions = 9
+
+        # Precompute action lookup table -----------------------------
+        self._action_lookup = np.empty((self.num_angles, self.num_actions, 3), dtype=int)
+        for ang_idx in range(self.num_angles):
+            for a in range(self.num_actions):
+                self._action_lookup[ang_idx, a] = self._raw_action(ang_idx, a)
+
+        self.agent_pos: Optional[Tuple[int, int, float]] = None
 
     # -----------------------------------------------------------------
     def _populate_obstacles(self) -> None:
@@ -126,89 +121,120 @@ class GridWorld:
                     placed += 1
 
     # -----------------------------------------------------------------
-    def reset(self) -> Tuple[int, int]:
+    def reset(self) -> Tuple[int, int, int]:
         self.agent_pos = self.start
         self.angle = -1
         return self.agent_pos
     
-    def reset_new_position(self, pos: Tuple[int, int]) -> bool:
+    def reset_new_position(self, pos: Tuple[int, int, int]) -> bool:
         """Reset the agent to a new position."""
         if pos[0] < 0 or pos[0] >= self.height or pos[1] < 0 or pos[1] >= self.width:
             raise ValueError("Position out of bounds.")
-        if self.grid[pos] == 1:
+        if self.grid[pos[0], pos[1]] == 1:
             return False
         self.agent_pos = pos
         self.angle = -1
         return True
+    
+    def angle_to_idx(self, ang: float) -> int:
+        step = 2 * math.pi / self.num_angles
+        return int(((ang + math.pi) % (2 * math.pi)) // step)
 
-    def step(self, action: int) -> Tuple[Tuple[int, int], float, bool]:
-        r, c = self.agent_pos
-        dr, dc = self.actions[action]
+    def idx_to_angle(self, idx: int) -> float:
+        step = 2 * math.pi / self.num_angles
+        return -math.pi + idx * step
+    
+    def _raw_action(self, ang_idx: int, action: int):
+        ang = self.idx_to_angle(ang_idx)
+
+        def rint(x):
+            return int(np.round(x))
+
+        options = []
+
+        if self.allow_only_forward:
+            options = [
+                (rint(math.sin(ang)),  rint(math.cos(ang)),   0),
+                (0, 0, +1),
+                (0, 0, +2),
+                (0, 0, +3),
+                (0, 0, +4),
+                (0, 0, +5),
+                (0, 0, +6),
+                (0, 0, +7),]
+        else:
+            options = [
+                (rint(math.sin(ang)),  rint(math.cos(ang)),   0),
+                (-rint(math.sin(ang)),  -rint(math.cos(ang)),   0),
+                (0, 0, +1),
+                (0, 0, +2),
+                (0, 0, +3),
+                (0, 0, +4),
+                (0, 0, +5),
+                (0, 0, +6),
+                (0, 0, +7),]
+
+        dr, dc, d_idx = options[action]
+        new_idx = (ang_idx + d_idx) % self.num_angles
+        return dr, dc, new_idx
+
+    def action(self, ang_idx: int, a: int):
+        dr, dc, new_idx = self._action_lookup[ang_idx, a]
+        return int(dr), int(dc), int(new_idx)
+
+    # --- in step() --------------------------------------------------
+    def step(self, action: int) -> Tuple[Tuple[int, int, int], float, bool]:
+        r, c, ang_idx = self.agent_pos
+        dr, dc, new_idx = self.action(ang_idx, action)
         nr, nc = r + dr, c + dc
+        turn_angle = ((new_idx - ang_idx) % self.num_angles) * (2*math.pi/self.num_angles)
 
-        # invalid move (wall or obstacle) -----------------------------
+        # invalid move (wall or obstacle)
         if not (0 <= nr < self.height and 0 <= nc < self.width) or self.grid[nr, nc] == 1:
-            next_state = (r, c) # Stay in place
+            next_state = (r, c, ang_idx)
             reward, done = self.reward_obstacle, False
             return next_state, reward, done
 
-        self.grid_explored[nr, nc] += 1
-
-        angle = math.atan2(dr, dc)
-        turn_angle = 0.0
-
-        if self.angle == -1:
-            turn_angle = 0.0
-            self.angle = math.atan2(dr, dc)
-        else:
-            turn_angle = angle - self.angle
-            turn_angle = (turn_angle + math.pi) % (2 * math.pi) - math.pi
-
-        if not self.allow_diag_obstacle and self.allow_diag:
-            try:
-                corner1 = self.grid[nr, c]
-            except IndexError:
-                corner1 = 0 # Não vou contar valores fora do grid como obstáculos
-            try:
-                corner2 = self.grid[r, nc]
-            except IndexError:
-                corner2 = 0
-
+        if not self.allow_diag_obstacle:
+            corner1 = self.grid[nr, c] if 0 <= nr < self.height and 0 <= c < self.width else 0
+            corner2 = self.grid[r, nc] if 0 <= r  < self.height and 0 <= nc < self.width else 0
             if corner1 == 1 or corner2 == 1:
-                next_state = (r, c)
+                next_state = (r, c, ang_idx)
                 reward, done = self.reward_obstacle, False
                 return next_state, reward, done
-    
-        next_state = (nr, nc)
+
+        next_state = (nr, nc, new_idx)
         self.agent_pos = next_state
+        self.grid_explored[nr, nc, new_idx] += 1
+
+        # initialize reward/done before adding step/shaping
+        reward, done = 0.0, False
         if next_state == self.goal:
             reward, done = self.reward_goal, True
-        else:
-            if action >=4 and self.allow_diag:
-                reward = self.diag_cost
-            else:
-                reward = self.reward_step
-            done = False
 
-        # potential-based shaping ------------------------------------
+        # step penalty
+        reward += self.reward_step
+
+        # potential-based shaping
         if self.shaping in ("manhattan", "euclidean") and self.use_reward_shaping:
-            def dist(s):
-                if self.shaping == "manhattan":
-                    return abs(s[0] - self.goal[0]) + abs(s[1] - self.goal[1])
-                return math.hypot(s[0] - self.goal[0], s[1] - self.goal[1])
-            reward += dist((r, c)) - dist(next_state)
-        
-        # nearby obstacles safety check ------------------------------
-        if self.safety_nearby_obstacle:
-            if next_state in self.nearby_obstacles_reward:
-                reward += self.nearby_obstacles_reward[next_state]
+            if self.shaping == "manhattan":
+                d0 = abs(r - self.goal[0]) + abs(c - self.goal[1])
+                d1 = abs(nr - self.goal[0]) + abs(nc - self.goal[1])
             else:
-                print(f"Warning: {next_state} not precomputed in nearby obstacles reward.")
-        
-        reward += -self.energy_consumption_gain * turn_angle / math.pi  # Penalty for turning
+                d0 = math.hypot(r  - self.goal[0], c  - self.goal[1])
+                d1 = math.hypot(nr - self.goal[0], nc - self.goal[1])
+            reward += (d0 - d1)
+
+        # nearby obstacles safety (dict is keyed by (r,c), not angle)
+        if self.safety_nearby_obstacle:
+            reward += self.nearby_obstacles_reward.get((nr, nc), 0.0)
+
+        # energy/turn penalty
+        reward += -self.energy_consumption_gain * turn_angle / math.pi
 
         return next_state, reward, done
-    
+
+        
     def precompute_nearby_obstacles_reward(self) -> None:
         """Precompute nearby obstacles for safety checks."""
         self.nearby_obstacles_reward = {}
@@ -253,20 +279,20 @@ class QLearningAgent:
         self.alpha, self.gamma = alpha, gamma
         self.epsilon, self.min_eps, self.decay = epsilon, min_epsilon, epsilon_decay
         self.schedule = schedule
-        self.Q = np.zeros((env.height, env.width, env.num_actions))
+        self.Q = np.zeros((env.height, env.width, env.num_angles, env.num_actions))
 
-    def choose_action(self, state: Tuple[int, int]) -> int:
+    def choose_action(self, state: Tuple[int, int, int]) -> int:
         if np.random.rand() < self.epsilon:
             return np.random.randint(self.env.num_actions)
-        r, c = state
-        q = self.Q[r, c]
+        r, c, ang_idx = state
+        q = self.Q[r, c, ang_idx]
         return int(np.random.choice(np.flatnonzero(q == q.max())))
 
     def update(self, s, a, r, s2, done) -> None:
-        r0, c0 = s
-        r1, c1 = s2
-        target = r if done else r + self.gamma * self.Q[r1, c1].max()
-        self.Q[r0, c0, a] += self.alpha * (target - self.Q[r0, c0, a])
+        r0, c0, k0 = s
+        r1, c1, k1 = s2
+        target = r if done else r + self.gamma * self.Q[r1, c1, k1].max()
+        self.Q[r0, c0, k0, a] += self.alpha * (target - self.Q[r0, c0, k0, a])
 
     def decay_epsilon(self, success_rate: float, threshold: float = 0.8, episodes: int = 5000, ep: int = 0) -> None:
         if self.schedule == "adaptive":
@@ -311,9 +337,11 @@ def train(
             so += 1
         else:
             r, c = np.random.randint(0, env.height), np.random.randint(0, env.width)
-            while not env.reset_new_position((r, c)):
+            k = np.random.randint(env.num_angles)
+            while not env.reset_new_position((r, c, k)):
                 r, c = np.random.randint(0, env.height), np.random.randint(0, env.width)
-            
+                k = np.random.randint(env.num_angles)
+
             s, tot, done = env.agent_pos, 0.0, False
             sn += 1
             
@@ -363,18 +391,128 @@ def greedy_path(env: GridWorld, agent: QLearningAgent, limit: int = 1000):
     agent.epsilon = backup
     return path
 
+# # ---------------------------------------------------------------------
+# # Combined visualisation
+# # ---------------------------------------------------------------------
+# def draw_q_heatmap(ax, env, agent):
+#     V = agent.Q.max(axis=2)  # best over actions
+#     cmap_val = "turbo" if "turbo" in plt.colormaps() else "plasma"
+#     V_mask = np.ma.masked_where(env.grid == 1, V)
+#     im = ax.imshow(V_mask, cmap=cmap_val, origin="lower", interpolation="nearest")
+#     plt.colorbar(im, ax=ax, fraction=0.046)
+
+#     ax.imshow(np.ma.masked_where(env.grid == 0, env.grid),
+#               cmap="gray_r", origin="lower", vmin=0, vmax=1, alpha=1, interpolation="nearest")
+
+#     ax.scatter(env.start[1], env.start[0], marker="o", c="lime", s=100, zorder=5)
+#     ax.scatter(env.goal[1],  env.goal[0],  marker="*", c="red",  s=150, zorder=5)
+#     ax.set_title("State Values")
+#     ax.set_xticks([]); ax.set_yticks([])
+
+# def path_image(env: GridWorld, path):
+#     img = np.ones((env.height, env.width, 3))
+#     img[env.grid == 1] = (0, 0, 0)
+
+#     sr, sc = env.start
+#     gr, gc = env.goal
+#     img[sr, sc] = (0, 1, 0)   # start (green)
+#     img[gr, gc] = (1, 0, 0)   # goal  (red)
+
+#     for step in path:
+#         r, c = step[:2]  # supports (r,c) or (r,c,angle)
+#         if (r, c) not in ((sr, sc), (gr, gc)) and env.grid[r, c] == 0:
+#             img[r, c] = (0.5, 0.5, 1)
+#     return img
+
+# def combined_vis(env: GridWorld, agent: QLearningAgent, path):
+#     fig, axs = plt.subplots(2, 2, figsize=(9, 9))
+
+#     # --- (0,0) Greedy path ------------------------------------------
+#     img = path_image(env, path)
+#     axs[0, 0].imshow(img, origin="lower", interpolation="nearest")
+#     axs[0, 0].set_xlim([-0.5, env.width-0.5])
+#     axs[0, 0].set_ylim([-0.5, env.height-0.5])
+#     axs[0, 0].set_xlabel("x (cols)")
+#     axs[0, 0].set_ylabel("y (rows)")
+#     axs[0, 0].set_title("Greedy Path (Cartesian view)")
+#     axs[0, 0].set_xticks(range(env.width))
+#     axs[0, 0].set_yticks(range(env.height))
+
+#     # --- (0,1) Q heatmap + greedy policy arrows ----------------------
+#     draw_q_heatmap(axs[0, 1], env, agent)
+
+#     # --- (1,0) Exploration (log) ------------------------------------
+#     max_lin = max(1, int(env.grid_explored.max()))
+#     draw_explored_heatmap(axs[1, 0], env, log_scale=True,
+#                           vmin=0, vmax=np.log10(max_lin + 1))
+
+#     # --- (1,1) Exploration (linear) ---------------------------------
+#     draw_explored_heatmap(axs[1, 1], env, log_scale=False,
+#                           vmin=0, vmax=max_lin)
+
+#     plt.tight_layout()
+#     plt.show()
+
+
+# # ---------------------------------------------------------------------
+# # Heat-map of exploration frequency
+# # ---------------------------------------------------------------------
+# def draw_explored_heatmap(
+#     ax,
+#     env: GridWorld,
+#     log_scale: bool = True,
+#     vmin: Optional[float] = None,
+#     vmax: Optional[float] = None,
+# ) -> None:
+#     # 1) Prepare data
+#     explored = env.grid_explored.astype(float)
+#     if log_scale:
+#         explored = np.log10(explored + 1)   # keeps zeros at 0
+
+#     # 2) Mask obstacles
+#     explored_mask = np.ma.masked_where(env.grid == 1, explored)
+
+#     # 3) Heatmap
+#     im = ax.imshow(
+#         explored_mask,
+#         cmap="inferno",
+#         origin="lower",
+#         interpolation="nearest",
+#         vmin=vmin,
+#         vmax=vmax,
+#     )
+#     plt.colorbar(im, ax=ax, fraction=0.046,
+#                  label="Visits (log₁₀)" if log_scale else "Visits")
+
+#     # 4) Obstacles + markers
+#     ax.imshow(
+#         np.ma.masked_where(env.grid == 0, env.grid),
+#         cmap="gray_r",
+#         origin="lower",
+#         vmin=0,
+#         vmax=1,
+#         interpolation="nearest",
+#         alpha=1,
+#     )
+#     ax.scatter(env.start[1], env.start[0], marker="o", c="lime", s=100, zorder=5)
+#     ax.scatter(env.goal[1],  env.goal[0],  marker="*", c="red",  s=150, zorder=5)
+
+#     ax.set_title("Exploration Heat-map (log)" if log_scale else "Exploration Heat-map (linear)")
+#     ax.set_xticks([]); ax.set_yticks([])
+
+
 # ---------------------------------------------------------------------
 # Combined visualisation
 # ---------------------------------------------------------------------
 def draw_q_heatmap(ax, env, agent):
-    V = agent.Q.max(axis=2)  # best over actions
+    V = agent.Q.max(axis=3).max(axis=2)  # best over actions, then over angles
     cmap_val = "turbo" if "turbo" in plt.colormaps() else "plasma"
     V_mask = np.ma.masked_where(env.grid == 1, V)
-    im = ax.imshow(V_mask, cmap=cmap_val, origin="lower", interpolation="nearest")
+    im = ax.imshow(V_mask, cmap=cmap_val, origin="lower")
     plt.colorbar(im, ax=ax, fraction=0.046)
 
     ax.imshow(np.ma.masked_where(env.grid == 0, env.grid),
-              cmap="gray_r", origin="lower", vmin=0, vmax=1, alpha=1, interpolation="nearest")
+              cmap="gray_r", origin="lower", vmin=0, vmax=1, alpha=1)
 
     ax.scatter(env.start[1], env.start[0], marker="o", c="lime", s=100, zorder=5)
     ax.scatter(env.goal[1],  env.goal[0],  marker="*", c="red",  s=150, zorder=5)
@@ -385,92 +523,50 @@ def path_image(env: GridWorld, path):
     img = np.ones((env.height, env.width, 3))
     img[env.grid == 1] = (0, 0, 0)
 
-    sr, sc = env.start
-    gr, gc = env.goal
+    sr, sc = env.start[0], env.start[1]
+    gr, gc = env.goal[0],  env.goal[1]
     img[sr, sc] = (0, 1, 0)   # start (green)
     img[gr, gc] = (1, 0, 0)   # goal  (red)
 
-    for step in path:
-        r, c = step[:2]  # supports (r,c) or (r,c,angle)
+    for r, c, _ in path:
         if (r, c) not in ((sr, sc), (gr, gc)) and env.grid[r, c] == 0:
             img[r, c] = (0.5, 0.5, 1)
     return img
 
+def draw_path_with_angles(ax, env: GridWorld, path, every=1, scale=0.4):
+    xs, ys, us, vs = [], [], [], []
+    for r, c, ang_idx in path[::every]:
+        ang = env.idx_to_angle(ang_idx)
+        xs.append(c)                 # x = column
+        ys.append(r)                 # y = row
+        us.append(math.cos(ang)*scale)
+        vs.append(math.sin(ang)*scale)   # NO minus now (we'll use origin='lower')
+    ax.quiver(xs, ys, us, vs, angles='xy', scale_units='xy', scale=1,
+              width=0.01, color='yellow', zorder=6)
+
 def combined_vis(env: GridWorld, agent: QLearningAgent, path):
-    fig, axs = plt.subplots(2, 2, figsize=(9, 9))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
 
-    # --- (0,0) Greedy path ------------------------------------------
+    # --- Left: path + angles, Cartesian (0,0 bottom-left) ---
     img = path_image(env, path)
-    axs[0, 0].imshow(img, origin="lower", interpolation="nearest")
-    axs[0, 0].set_xlim([-0.5, env.width-0.5])
-    axs[0, 0].set_ylim([-0.5, env.height-0.5])
-    axs[0, 0].set_xlabel("x (cols)")
-    axs[0, 0].set_ylabel("y (rows)")
-    axs[0, 0].set_title("Greedy Path (Cartesian view)")
-    axs[0, 0].set_xticks(range(env.width))
-    axs[0, 0].set_yticks(range(env.height))
+    ax1.imshow(img, origin="lower", interpolation='nearest')  # <- key change
+    draw_path_with_angles(ax1, env, path, every=1, scale=0.35)
 
-    # --- (0,1) Q heatmap + greedy policy arrows ----------------------
-    draw_q_heatmap(axs[0, 1], env, agent)
+    ax1.set_xlim([-0.5, env.width-0.5])
+    ax1.set_ylim([-0.5, env.height-0.5])
+    ax1.set_xlabel("x (cols)")
+    ax1.set_ylabel("y (rows)")
+    ax1.set_title("Greedy Path + Orientation (Cartesian view)")
+    ax1.set_xticks(range(env.width))
+    ax1.set_yticks(range(env.height))
 
-    # --- (1,0) Exploration (log) ------------------------------------
-    max_lin = max(1, int(env.grid_explored.max()))
-    draw_explored_heatmap(axs[1, 0], env, log_scale=True,
-                          vmin=0, vmax=np.log10(max_lin + 1))
-
-    # --- (1,1) Exploration (linear) ---------------------------------
-    draw_explored_heatmap(axs[1, 1], env, log_scale=False,
-                          vmin=0, vmax=max_lin)
+    # --- Right: heatmap (also Cartesian) ---
+    draw_q_heatmap(ax2, env, agent)  # inside, also use origin='lower'
+    ax2.set_xlabel("x")
+    ax2.set_ylabel("y")
 
     plt.tight_layout()
     plt.show()
-
-
-# ---------------------------------------------------------------------
-# Heat-map of exploration frequency
-# ---------------------------------------------------------------------
-def draw_explored_heatmap(
-    ax,
-    env: GridWorld,
-    log_scale: bool = True,
-    vmin: Optional[float] = None,
-    vmax: Optional[float] = None,
-) -> None:
-    # 1) Prepare data
-    explored = env.grid_explored.astype(float)
-    if log_scale:
-        explored = np.log10(explored + 1)   # keeps zeros at 0
-
-    # 2) Mask obstacles
-    explored_mask = np.ma.masked_where(env.grid == 1, explored)
-
-    # 3) Heatmap
-    im = ax.imshow(
-        explored_mask,
-        cmap="inferno",
-        origin="lower",
-        interpolation="nearest",
-        vmin=vmin,
-        vmax=vmax,
-    )
-    plt.colorbar(im, ax=ax, fraction=0.046,
-                 label="Visits (log₁₀)" if log_scale else "Visits")
-
-    # 4) Obstacles + markers
-    ax.imshow(
-        np.ma.masked_where(env.grid == 0, env.grid),
-        cmap="gray_r",
-        origin="lower",
-        vmin=0,
-        vmax=1,
-        interpolation="nearest",
-        alpha=1,
-    )
-    ax.scatter(env.start[1], env.start[0], marker="o", c="lime", s=100, zorder=5)
-    ax.scatter(env.goal[1],  env.goal[0],  marker="*", c="red",  s=150, zorder=5)
-
-    ax.set_title("Exploration Heat-map (log)" if log_scale else "Exploration Heat-map (linear)")
-    ax.set_xticks([]); ax.set_yticks([])
 
 # ---------------------------------------------------------------------
 # MAIN
@@ -501,7 +597,6 @@ if __name__ == "__main__":
         obstacle_mode="cluster",
         grid_map=obstacle_map,
         seed=30,
-        allow_diagonal=True,
         allow_diagonal_obstacle=allow_diagonal_obstacle,
         shaping="euclidean",
         reward_step=-0.001,
@@ -523,9 +618,9 @@ if __name__ == "__main__":
         schedule="mix",
     )
     
-    episodes = 400
+    episodes = 1000
 
-    change_start_percentage = 1
+    change_start_percentage = 0
     durations = train(env, agent, episodes=episodes, print_every=int(episodes/100), change_start_percentage=change_start_percentage)
 
     path = greedy_path(env, agent)
