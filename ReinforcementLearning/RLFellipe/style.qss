@@ -28,54 +28,48 @@ QPushButton {
 }
 
 QPushButton:hover {
-    /* Subtle elevation effect on hover */
     border: 1px solid #bdc3c7;
 }
 
 /* Style for Navigation Buttons (class "navigation") */
 QPushButton[class="navigation"] {
-    background-color: #3498db; /* A more vivid blue */
+    background-color: #3498db;
     color: white;
 }
-
 QPushButton[class="navigation"]:hover {
-    background-color: #2980b9; /* A darker blue */
+    background-color: #2980b9;
     border-color: #2980b9;
 }
 
 /* Style for the Grid confirmation button */
 QPushButton#confirmButton {
-    background-color: #2ecc71; /* Emerald green */
+    background-color: #2ecc71;
     color: white;
 }
-
 QPushButton#confirmButton:hover {
-    background-color: #27ae60; /* A darker green */
+    background-color: #27ae60;
     border-color: #27ae60;
 }
 
 /* Style for the close button */
 QPushButton#closeButton {
-    background-color: #e74c3c; /* Alizarin red */
+    background-color: #e74c3c;
     color: white;
 }
-
 QPushButton#closeButton:hover {
-    background-color: #c0392b; /* A darker red */
+    background-color: #c0392b;
     border-color: #c0392b;
 }
 
 /* --- Styles for Form Widgets --- */
 
-/* Style for labels in a form layout */
 QFormLayout > QLabel {
     font-size: 16px;
     font-weight: bold;
     color: #2c3e50;
-    padding-top: 5px; /* Better vertical alignment with other widgets */
+    padding-top: 5px;
 }
 
-/* Style for combo boxes (drop-down menus) */
 QComboBox {
     padding: 8px;
     border: 1px solid #bdc3c7;
@@ -84,19 +78,15 @@ QComboBox {
     background-color: white;
     min-width: 100px;
 }
-
 QComboBox:hover {
     border-color: #3498db;
 }
-
-/* Style for the drop-down list view */
 QComboBox QAbstractItemView {
     border: 1px solid #bdc3c7;
     background-color: white;
     selection-background-color: #3498db;
 }
 
-/* Style for Spin Boxes - SIMPLIFIED */
 QSpinBox {
     padding: 8px;
     border: 1px solid #bdc3c7;
@@ -105,14 +95,45 @@ QSpinBox {
     background-color: white;
     min-width: 100px;
 }
-
 QSpinBox:hover {
     border-color: #3498db;
 }
 
-/*
-  By removing the specific styles for QSpinBox::up-button, QSpinBox::down-button,
-  and their arrows, we allow Qt to use the default system rendering for these
-  parts. This ensures the arrows are always visible while the main widget
-  still matches our theme.
-*/
+/* --- Styles for Compass Widget --- */
+
+QLabel#compassTitle {
+    font-size: 16px;
+    font-weight: bold;
+    color: #34495e;
+    margin-bottom: 10px;
+}
+
+QLabel#compassValue {
+    font-size: 20px;
+    font-weight: bold;
+    color: #2c3e50;
+}
+
+QPushButton#compassButton {
+    font-size: 24px;
+    font-weight: bold;
+    min-width: 40px;
+    max-width: 40px;
+    min-height: 40px;
+    max-height: 40px;
+    padding: 0;
+    border-radius: 20px; /* Make it circular */
+    border: 2px solid #bdc3c7;
+    background-color: white;
+}
+
+QPushButton#compassButton:hover {
+    background-color: #ecf0f1;
+    border-color: #3498db;
+}
+
+QPushButton#compassButton:checked {
+    background-color: #3498db;
+    color: white;
+    border-color: #2980b9;
+}

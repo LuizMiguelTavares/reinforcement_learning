@@ -16,7 +16,6 @@ from matplotlib.colors import ListedColormap, BoundaryNorm
 import numpy as np
 import matplotlib
 
-# Set the backend for Matplotlib
 matplotlib.use('qtagg')
 
 
@@ -215,8 +214,8 @@ class GridConfigurationPage(QWidget):
         self.button_next.setProperty("class", "navigation")
 
         # Add widgets to form layout
-        form_layout.addRow(QLabel("Grid Columns:"), self.spinbox_grid_cols)
-        form_layout.addRow(QLabel("Grid Rows:"), self.spinbox_grid_rows)
+        form_layout.addRow(QLabel("X Size:"), self.spinbox_grid_cols)
+        form_layout.addRow(QLabel("Y Size:"), self.spinbox_grid_rows)
         form_layout.addRow(QLabel("Start X:"), self.spinbox_start_x)
         form_layout.addRow(QLabel("Start Y:"), self.spinbox_start_y)
         form_layout.addRow(QLabel("Goal X:"), self.spinbox_goal_x)
