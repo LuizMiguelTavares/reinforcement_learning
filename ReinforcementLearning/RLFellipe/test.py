@@ -16,7 +16,7 @@ from matplotlib.figure import Figure
 from matplotlib.colors import ListedColormap, BoundaryNorm
 import matplotlib
 
-# Set the backend for Matplotlib
+
 matplotlib.use('qtagg')
 
 
@@ -30,6 +30,7 @@ class AppData:
     start: Optional[Tuple[int, int, int]] = (0, 0, 0)
     goal: Optional[Tuple[int, int, int]] = (9, 9, 0)
     agent_type: str = "Omnidirecional"
+    # NOVAS VARIÁVEIS PARA OS SLIDERS
     param1: int = 50
     param2: int = 50
     param3: int = 50
@@ -67,6 +68,7 @@ class CompassWidget(QWidget):
             4: "←", 5: "↙", 6: "↓", 7: "↘",
         }
 
+        # Map orientation index to angle in degrees
         self.index_to_angle = {i: i * 45 for i in range(8)}
 
         self.buttons = {}
@@ -96,6 +98,7 @@ class CompassWidget(QWidget):
         self.current_orientation = orientation
         self.buttons[orientation].setChecked(True)
 
+        # Display the angle, but emit the index
         angle = self.index_to_angle[orientation]
         self.orientation_label.setText(f"{angle}°")
         self.orientation_changed.emit(orientation)
@@ -154,6 +157,7 @@ class MainWindow(QMainWindow):
 
         self.training_page.agent_type_changed.connect(
             lambda agent: self.update_data('agent_type', agent))
+        # CONECTA O SINAL DO SLIDER
         self.training_page.param_changed.connect(self.update_data)
 
         self.start_page.button_next.clicked.connect(
@@ -305,17 +309,22 @@ class GridGenerator(QWidget):
         bounds = [-0.5, 0.5, 1.5, 2.5, 3.5]
         self.norm = BoundaryNorm(bounds, self.cmap.N)
 
-        self.nx, self.ny = 0, 0
-        self.start_pos, self.goal_pos = None, None
+        self.nx = 0
+        self.ny = 0
+        self.start_pos = None
+        self.goal_pos = None
         self.display_map = None
-        self.is_drawing, self.is_dragged = False, False
-        self.last_pos, self.drag_mode = None, 'draw'
+        self.is_drawing = False
+        self.is_dragged = False
+        self.last_pos = None
+        self.drag_mode = 'draw'
 
         self.connect_events()
 
     def update_grid(self, grid_size: Tuple[int, int], start_pos: Tuple[int, int, int], goal_pos: Tuple[int, int, int]):
         self.nx, self.ny = grid_size
-        self.start_pos, self.goal_pos = start_pos, goal_pos
+        self.start_pos = start_pos
+        self.goal_pos = goal_pos
         self.display_map = np.zeros((self.ny, self.nx), dtype=int)
         self.display_map[self.start_pos[1], self.start_pos[0]] = 2
         self.display_map[self.goal_pos[1], self.goal_pos[0]] = 3
@@ -348,6 +357,7 @@ class GridGenerator(QWidget):
             0: (1, 0), 1: (0.707, -0.707), 2: (0, -1), 3: (-0.707, -0.707),
             4: (-1, 0), 5: (-0.707, 0.707), 6: (0, 1), 7: (0.707, 0.707)
         }
+
         sx, sy, so = self.start_pos
         dx, dy = orientations[so]
         self.ax.arrow(sx, sy, dx*0.25, dy*0.25, head_width=0.2,
@@ -410,7 +420,7 @@ class GridGenerator(QWidget):
             return
         self.is_dragged = True
         ix, iy = int(round(event.xdata)), int(round(event.ydata))
-        if 0 <= ix < self.nx and 0 <= iy < self.ny and (ix, iy) != self.last_pos:
+        if 0 <= ix < self.nx and 0 <= iy < self.ny and (ix, iy) != getattr(self, 'last_pos', None):
             if not self._is_protected_cell(ix, iy):
                 self.display_map[iy, ix] = 1 if self.drag_mode == 'draw' else 0
                 self.im.set_data(self.display_map)
@@ -424,6 +434,7 @@ class GridGenerator(QWidget):
 
 class TrainingConfigurationPage(QWidget):
     agent_type_changed = Signal(str)
+    # NOVO SINAL para os sliders (nome_do_parametro, valor)
     param_changed = Signal(str, int)
 
     def __init__(self, main_window: QMainWindow):
@@ -436,7 +447,7 @@ class TrainingConfigurationPage(QWidget):
 
         main_layout = QVBoxLayout(self)
         main_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(20)
 
         # --- Seção de Seleção de Agente ---
         title = QLabel("Select Agent Type")
@@ -459,29 +470,19 @@ class TrainingConfigurationPage(QWidget):
             self.button_group.addButton(button)
         main_layout.addLayout(buttons_layout)
 
-        main_layout.addStretch(1)
-
         # --- Seção dos Sliders ---
-        params_title = QLabel("Training Parameters")
-        params_title.setObjectName("trainingParamsTitle")
-        main_layout.addWidget(
-            params_title, alignment=Qt.AlignmentFlag.AlignCenter)
-
         sliders_container = QWidget()
-        sliders_container.setObjectName("slidersContainer")
         sliders_layout = QFormLayout(sliders_container)
-        # CORREÇÃO: Força o campo do slider a expandir horizontalmente
-        sliders_layout.setFieldGrowthPolicy(
-            QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-        sliders_layout.setSpacing(25)
+        sliders_layout.setSpacing(15)
         sliders_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        sliders_layout.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+        sliders_container.setObjectName("slidersContainer")
 
         for i, param_name in enumerate(self.param_names):
             slider = QSlider(Qt.Orientation.Horizontal)
             slider.setRange(1, 100)
             slider.setValue(50)
 
+            # Label para mostrar o valor atual do slider
             self.value_labels[param_name] = QLabel("50")
             self.value_labels[param_name].setObjectName("sliderValueLabel")
             self.value_labels[param_name].setMinimumWidth(30)
@@ -494,11 +495,11 @@ class TrainingConfigurationPage(QWidget):
             slider_row_layout.addWidget(self.value_labels[param_name])
 
             sliders_layout.addRow(f"Variável {i+1}:", slider_row_layout)
+            # Emite o valor inicial
             self.param_changed.emit(param_name, 50)
 
         main_layout.addWidget(sliders_container)
-
-        main_layout.addStretch(1)
+        main_layout.addStretch()
 
         # --- Botão de Finalizar ---
         self.button_finish = QPushButton("Finish")
@@ -506,6 +507,7 @@ class TrainingConfigurationPage(QWidget):
         main_layout.addWidget(self.button_finish,
                               alignment=Qt.AlignmentFlag.AlignCenter)
 
+        # Seleciona o primeiro botão como padrão
         self.buttons[self.agent_types[0]].setChecked(True)
         self.select_agent(self.agent_types[0])
 
@@ -513,6 +515,7 @@ class TrainingConfigurationPage(QWidget):
         self.agent_type_changed.emit(agent_name)
 
     def _on_slider_changed(self, name: str, value: int):
+        """Atualiza o label e emite o sinal quando o slider muda."""
         self.value_labels[name].setText(str(value))
         self.param_changed.emit(name, value)
 

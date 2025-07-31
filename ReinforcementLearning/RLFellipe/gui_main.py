@@ -16,7 +16,7 @@ from matplotlib.figure import Figure
 from matplotlib.colors import ListedColormap, BoundaryNorm
 import matplotlib
 
-# Set the backend for Matplotlib
+
 matplotlib.use('qtagg')
 
 
