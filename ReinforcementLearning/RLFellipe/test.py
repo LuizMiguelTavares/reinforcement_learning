@@ -1,13 +1,13 @@
 import sys
 from typing import Optional, Tuple, Literal, Any
 import numpy as np
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 
 # Use PySide6 as specified in the original code
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget,
                                QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
                                QStackedWidget, QFormLayout, QSpinBox,
-                               QGridLayout, QSizePolicy)
+                               QGridLayout, QSizePolicy, QButtonGroup, QSlider)
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QScreen
 
@@ -29,8 +29,12 @@ class AppData:
     obstacle_map: Optional[np.ndarray] = None
     start: Optional[Tuple[int, int, int]] = (0, 0, 0)
     goal: Optional[Tuple[int, int, int]] = (9, 9, 0)
-
-# --- New Compass Widget ---
+    agent_type: str = "Omnidirecional"
+    param1: int = 50
+    param2: int = 50
+    param3: int = 50
+    param4: int = 50
+    param5: int = 50
 
 
 class CompassWidget(QWidget):
@@ -63,7 +67,6 @@ class CompassWidget(QWidget):
             4: "←", 5: "↙", 6: "↓", 7: "↘",
         }
 
-        # Map orientation index to angle in degrees
         self.index_to_angle = {i: i * 45 for i in range(8)}
 
         self.buttons = {}
@@ -93,7 +96,6 @@ class CompassWidget(QWidget):
         self.current_orientation = orientation
         self.buttons[orientation].setChecked(True)
 
-        # Display the angle, but emit the index
         angle = self.index_to_angle[orientation]
         self.orientation_label.setText(f"{angle}°")
         self.orientation_changed.emit(orientation)
@@ -123,11 +125,13 @@ class MainWindow(QMainWindow):
         self.start_page = StartPage(self)
         self.config_page = GridConfigurationPage(self)
         self.grid_generator = GridGenerator(self)
+        self.training_page = TrainingConfigurationPage(self)
         self.end_page = EndPage(self)
 
         self.stacked_widget.addWidget(self.start_page)
         self.stacked_widget.addWidget(self.config_page)
         self.stacked_widget.addWidget(self.grid_generator)
+        self.stacked_widget.addWidget(self.training_page)
         self.stacked_widget.addWidget(self.end_page)
 
         self.connect_signals_and_navigation()
@@ -148,11 +152,17 @@ class MainWindow(QMainWindow):
         self.grid_generator.grid_confirmed.connect(
             lambda map_data: self.update_data('obstacle_map', map_data))
 
+        self.training_page.agent_type_changed.connect(
+            lambda agent: self.update_data('agent_type', agent))
+        self.training_page.param_changed.connect(self.update_data)
+
         self.start_page.button_next.clicked.connect(
             lambda: self.stacked_widget.setCurrentIndex(1))
         self.config_page.button_next.clicked.connect(self.go_to_grid_generator)
         self.grid_generator.confirm_button.clicked.connect(
             lambda: self.stacked_widget.setCurrentIndex(3))
+        self.training_page.button_finish.clicked.connect(
+            lambda: self.stacked_widget.setCurrentIndex(4))
         self.end_page.button_close.clicked.connect(self.close)
 
     def go_to_grid_generator(self):
@@ -162,8 +172,8 @@ class MainWindow(QMainWindow):
 
     def update_data(self, field_name: str, value: Any):
         if hasattr(self.data, field_name):
-            print(f"Updating self.data.{field_name} to {value}")
             setattr(self.data, field_name, value)
+            print(f"Updating self.data.{field_name} to {value}")
             print("Current Data:", self.data)
         else:
             print(f"Error: Field '{field_name}' doesn't exist.")
@@ -215,8 +225,8 @@ class GridConfigurationPage(QWidget):
         self.button_next = QPushButton("Continue to Obstacle Drawing")
         self.button_next.setProperty("class", "navigation")
 
-        form_layout.addRow("Grid Columns:", self.spinbox_grid_cols)
-        form_layout.addRow("Grid Rows:", self.spinbox_grid_rows)
+        form_layout.addRow("X Size:", self.spinbox_grid_cols)
+        form_layout.addRow("Y Size:", self.spinbox_grid_rows)
         form_layout.addRow("Start X:", self.spinbox_start_x)
         form_layout.addRow("Start Y:", self.spinbox_start_y)
         form_layout.addRow("Goal X:", self.spinbox_goal_x)
@@ -283,7 +293,7 @@ class GridGenerator(QWidget):
         content_layout.addWidget(self.canvas, 1)
         content_layout.addWidget(self.goal_compass)
 
-        self.confirm_button = QPushButton("Confirm Grid and Finish")
+        self.confirm_button = QPushButton("Confirm Grid and Continue")
         self.confirm_button.setObjectName("confirmButton")
 
         main_layout.addLayout(content_layout)
@@ -295,23 +305,17 @@ class GridGenerator(QWidget):
         bounds = [-0.5, 0.5, 1.5, 2.5, 3.5]
         self.norm = BoundaryNorm(bounds, self.cmap.N)
 
-        # --- FIX: Initialize state attributes ---
-        self.nx = 0
-        self.ny = 0
-        self.start_pos = None
-        self.goal_pos = None
+        self.nx, self.ny = 0, 0
+        self.start_pos, self.goal_pos = None, None
         self.display_map = None
-        self.is_drawing = False
-        self.is_dragged = False
-        self.last_pos = None
-        self.drag_mode = 'draw'
+        self.is_drawing, self.is_dragged = False, False
+        self.last_pos, self.drag_mode = None, 'draw'
 
         self.connect_events()
 
     def update_grid(self, grid_size: Tuple[int, int], start_pos: Tuple[int, int, int], goal_pos: Tuple[int, int, int]):
         self.nx, self.ny = grid_size
-        self.start_pos = start_pos
-        self.goal_pos = goal_pos
+        self.start_pos, self.goal_pos = start_pos, goal_pos
         self.display_map = np.zeros((self.ny, self.nx), dtype=int)
         self.display_map[self.start_pos[1], self.start_pos[0]] = 2
         self.display_map[self.goal_pos[1], self.goal_pos[0]] = 3
@@ -344,16 +348,13 @@ class GridGenerator(QWidget):
             0: (1, 0), 1: (0.707, -0.707), 2: (0, -1), 3: (-0.707, -0.707),
             4: (-1, 0), 5: (-0.707, 0.707), 6: (0, 1), 7: (0.707, 0.707)
         }
-
         sx, sy, so = self.start_pos
         dx, dy = orientations[so]
-        # Arrow length and head size reduced to fit inside the cell
         self.ax.arrow(sx, sy, dx*0.25, dy*0.25, head_width=0.2,
                       head_length=0.2, fc='k', ec='k')
 
         gx, gy, go = self.goal_pos
         dx, dy = orientations[go]
-        # Arrow length and head size reduced to fit inside the cell
         self.ax.arrow(gx, gy, dx*0.25, dy*0.25, head_width=0.2,
                       head_length=0.2, fc='k', ec='k')
 
@@ -409,7 +410,7 @@ class GridGenerator(QWidget):
             return
         self.is_dragged = True
         ix, iy = int(round(event.xdata)), int(round(event.ydata))
-        if 0 <= ix < self.nx and 0 <= iy < self.ny and (ix, iy) != getattr(self, 'last_pos', None):
+        if 0 <= ix < self.nx and 0 <= iy < self.ny and (ix, iy) != self.last_pos:
             if not self._is_protected_cell(ix, iy):
                 self.display_map[iy, ix] = 1 if self.drag_mode == 'draw' else 0
                 self.im.set_data(self.display_map)
@@ -419,6 +420,101 @@ class GridGenerator(QWidget):
     def on_confirm(self):
         final_obstacle_map = np.where(self.display_map == 1, 1, 0)
         self.grid_confirmed.emit(final_obstacle_map)
+
+
+class TrainingConfigurationPage(QWidget):
+    agent_type_changed = Signal(str)
+    param_changed = Signal(str, int)
+
+    def __init__(self, main_window: QMainWindow):
+        super().__init__(main_window)
+        self.main_window = main_window
+        self.agent_types = ["Omnidirecional", "Diferential", "Car Like"]
+        self.param_names = [f.name for f in fields(
+            AppData) if f.name.startswith("param")]
+        self.value_labels = {}
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+
+        # --- Seção de Seleção de Agente ---
+        title = QLabel("Select Agent Type")
+        title.setObjectName("titleLabel")
+        main_layout.addWidget(title, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setSpacing(15)
+        self.button_group = QButtonGroup(self)
+        self.button_group.setExclusive(True)
+        self.buttons = {}
+        for agent_name in self.agent_types:
+            button = QPushButton(agent_name)
+            button.setProperty("class", "agentButton")
+            button.setCheckable(True)
+            button.clicked.connect(
+                lambda checked, name=agent_name: self.select_agent(name) if checked else None)
+            buttons_layout.addWidget(button)
+            self.buttons[agent_name] = button
+            self.button_group.addButton(button)
+        main_layout.addLayout(buttons_layout)
+
+        main_layout.addStretch(1)
+
+        # --- Seção dos Sliders ---
+        params_title = QLabel("Training Parameters")
+        params_title.setObjectName("trainingParamsTitle")
+        main_layout.addWidget(
+            params_title, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        sliders_container = QWidget()
+        sliders_container.setObjectName("slidersContainer")
+        sliders_layout = QFormLayout(sliders_container)
+        # CORREÇÃO: Força o campo do slider a expandir horizontalmente
+        sliders_layout.setFieldGrowthPolicy(
+            QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        sliders_layout.setSpacing(25)
+        sliders_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        sliders_layout.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+
+        for i, param_name in enumerate(self.param_names):
+            slider = QSlider(Qt.Orientation.Horizontal)
+            slider.setRange(1, 100)
+            slider.setValue(50)
+
+            self.value_labels[param_name] = QLabel("50")
+            self.value_labels[param_name].setObjectName("sliderValueLabel")
+            self.value_labels[param_name].setMinimumWidth(30)
+
+            slider.valueChanged.connect(
+                lambda value, name=param_name: self._on_slider_changed(name, value))
+
+            slider_row_layout = QHBoxLayout()
+            slider_row_layout.addWidget(slider)
+            slider_row_layout.addWidget(self.value_labels[param_name])
+
+            sliders_layout.addRow(f"Variável {i+1}:", slider_row_layout)
+            self.param_changed.emit(param_name, 50)
+
+        main_layout.addWidget(sliders_container)
+
+        main_layout.addStretch(1)
+
+        # --- Botão de Finalizar ---
+        self.button_finish = QPushButton("Finish")
+        self.button_finish.setProperty("class", "navigation")
+        main_layout.addWidget(self.button_finish,
+                              alignment=Qt.AlignmentFlag.AlignCenter)
+
+        self.buttons[self.agent_types[0]].setChecked(True)
+        self.select_agent(self.agent_types[0])
+
+    def select_agent(self, agent_name: str):
+        self.agent_type_changed.emit(agent_name)
+
+    def _on_slider_changed(self, name: str, value: int):
+        self.value_labels[name].setText(str(value))
+        self.param_changed.emit(name, value)
 
 
 class EndPage(QWidget):

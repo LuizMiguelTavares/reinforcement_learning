@@ -137,3 +137,54 @@ QPushButton#compassButton:checked {
     color: white;
     border-color: #2980b9;
 }
+
+/* --- Estilos para Seleção de Agente --- */
+
+QPushButton[class="agentButton"] {
+    background-color: white;
+    color: #2c3e50;
+    border: 2px solid #bdc3c7;
+}
+
+QPushButton[class="agentButton"]:hover {
+    border-color: #3498db;
+    background-color: #ecf0f1;
+}
+
+QPushButton[class="agentButton"]:checked {
+    background-color: #3498db;
+    color: white;
+    border-color: #2980b9;
+}
+
+/* --- NOVOS ESTILOS PARA OS SLIDERS --- */
+QWidget#slidersContainer {
+    max-width: 600px;
+}
+
+QLabel#sliderValueLabel {
+    font-size: 16px;
+    font-weight: bold;
+    color: #3498db;
+}
+
+QSlider::groove:horizontal {
+    border: 1px solid #bdc3c7;
+    background: #ecf0f1;
+    height: 8px;
+    border-radius: 4px;
+}
+
+QSlider::handle:horizontal {
+    background: #3498db;
+    border: 1px solid #3498db;
+    width: 18px;
+    height: 18px;
+    margin: -5px 0; /* handle is placed vertically centered */
+    border-radius: 9px;
+}
+
+QSlider::handle:horizontal:hover {
+    background: #2980b9;
+    border-color: #2980b9;
+}
