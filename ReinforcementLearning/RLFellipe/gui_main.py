@@ -447,7 +447,7 @@ class TrainingConfigurationPage(QWidget):
 
         main_layout = QVBoxLayout(self)
         main_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        main_layout.setSpacing(20)
+        main_layout.setSpacing(40)
 
         # --- Seção de Seleção de Agente ---
         title = QLabel("Select Agent Type")
@@ -471,9 +471,14 @@ class TrainingConfigurationPage(QWidget):
         main_layout.addLayout(buttons_layout)
 
         # --- Seção dos Sliders ---
+        sliders_title = QLabel("Training Parameters")
+        sliders_title.setObjectName("titleLabel")
+        main_layout.addWidget(
+            sliders_title, alignment=Qt.AlignmentFlag.AlignCenter)
+
         sliders_container = QWidget()
         sliders_layout = QFormLayout(sliders_container)
-        sliders_layout.setSpacing(15)
+        sliders_layout.setSpacing(50)
         sliders_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         sliders_container.setObjectName("slidersContainer")
 
@@ -494,7 +499,7 @@ class TrainingConfigurationPage(QWidget):
             slider_row_layout.addWidget(slider)
             slider_row_layout.addWidget(self.value_labels[param_name])
 
-            sliders_layout.addRow(f"Variável {i+1}:", slider_row_layout)
+            sliders_layout.addRow(f"Parameter {i+1}:", slider_row_layout)
             # Emite o valor inicial
             self.param_changed.emit(param_name, 50)
 
