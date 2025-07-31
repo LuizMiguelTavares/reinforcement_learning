@@ -24,6 +24,7 @@ QPushButton {
     padding: 12px 24px;
     font-size: 16px;
     font-weight: bold;
+    min-width: 150px;
 }
 
 QPushButton:hover {
@@ -63,3 +64,55 @@ QPushButton#closeButton:hover {
     background-color: #c0392b; /* A darker red */
     border-color: #c0392b;
 }
+
+/* --- Styles for Form Widgets --- */
+
+/* Style for labels in a form layout */
+QFormLayout > QLabel {
+    font-size: 16px;
+    font-weight: bold;
+    color: #2c3e50;
+    padding-top: 5px; /* Better vertical alignment with other widgets */
+}
+
+/* Style for combo boxes (drop-down menus) */
+QComboBox {
+    padding: 8px;
+    border: 1px solid #bdc3c7;
+    border-radius: 8px;
+    font-size: 15px;
+    background-color: white;
+    min-width: 100px;
+}
+
+QComboBox:hover {
+    border-color: #3498db;
+}
+
+/* Style for the drop-down list view */
+QComboBox QAbstractItemView {
+    border: 1px solid #bdc3c7;
+    background-color: white;
+    selection-background-color: #3498db;
+}
+
+/* Style for Spin Boxes - SIMPLIFIED */
+QSpinBox {
+    padding: 8px;
+    border: 1px solid #bdc3c7;
+    border-radius: 8px;
+    font-size: 15px;
+    background-color: white;
+    min-width: 100px;
+}
+
+QSpinBox:hover {
+    border-color: #3498db;
+}
+
+/*
+  By removing the specific styles for QSpinBox::up-button, QSpinBox::down-button,
+  and their arrows, we allow Qt to use the default system rendering for these
+  parts. This ensures the arrows are always visible while the main widget
+  still matches our theme.
+*/
