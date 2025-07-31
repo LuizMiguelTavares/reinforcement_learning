@@ -63,6 +63,9 @@ class CompassWidget(QWidget):
             4: "←", 5: "↙", 6: "↓", 7: "↘",
         }
 
+        # Map orientation index to angle in degrees
+        self.index_to_angle = {i: i * 45 for i in range(8)}
+
         self.buttons = {}
         for (row, col), orientation in self.button_map.items():
             button = QPushButton(arrows[orientation])
@@ -73,7 +76,7 @@ class CompassWidget(QWidget):
             grid_layout.addWidget(button, row, col)
             self.buttons[orientation] = button
 
-        self.orientation_label = QLabel("0")
+        self.orientation_label = QLabel("0°")
         self.orientation_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.orientation_label.setObjectName("compassValue")
         grid_layout.addWidget(self.orientation_label, 1, 1)
@@ -89,7 +92,10 @@ class CompassWidget(QWidget):
 
         self.current_orientation = orientation
         self.buttons[orientation].setChecked(True)
-        self.orientation_label.setText(str(orientation))
+
+        # Display the angle, but emit the index
+        angle = self.index_to_angle[orientation]
+        self.orientation_label.setText(f"{angle}°")
         self.orientation_changed.emit(orientation)
 
 
@@ -289,7 +295,17 @@ class GridGenerator(QWidget):
         bounds = [-0.5, 0.5, 1.5, 2.5, 3.5]
         self.norm = BoundaryNorm(bounds, self.cmap.N)
 
-        self.orientation_arrows = []
+        # --- FIX: Initialize state attributes ---
+        self.nx = 0
+        self.ny = 0
+        self.start_pos = None
+        self.goal_pos = None
+        self.display_map = None
+        self.is_drawing = False
+        self.is_dragged = False
+        self.last_pos = None
+        self.drag_mode = 'draw'
+
         self.connect_events()
 
     def update_grid(self, grid_size: Tuple[int, int], start_pos: Tuple[int, int, int], goal_pos: Tuple[int, int, int]):
@@ -305,7 +321,6 @@ class GridGenerator(QWidget):
 
     def setup_plot(self):
         self.ax.clear()
-        self.orientation_arrows.clear()  # Clear the list of artist references
 
         self.im = self.ax.imshow(
             self.display_map, cmap=self.cmap, norm=self.norm, interpolation='nearest')
@@ -315,6 +330,10 @@ class GridGenerator(QWidget):
         self.ax.tick_params(which="minor", size=0)
         self.ax.set_xticks([])
         self.ax.set_yticks([])
+
+        self.ax.set_xlim(-0.5, self.nx - 0.5)
+        self.ax.set_ylim(self.ny - 0.5, -0.5)
+
         self.ax.set_title(
             "Click/drag to draw obstacles. Use compasses to set orientation.")
         self._draw_orientation_arrows()
@@ -328,15 +347,15 @@ class GridGenerator(QWidget):
 
         sx, sy, so = self.start_pos
         dx, dy = orientations[so]
-        start_arrow = self.ax.arrow(
-            sx, sy, dx*0.5, dy*0.5, head_width=0.3, head_length=0.3, fc='k', ec='k')
-        self.orientation_arrows.append(start_arrow)
+        # Arrow length and head size reduced to fit inside the cell
+        self.ax.arrow(sx, sy, dx*0.25, dy*0.25, head_width=0.2,
+                      head_length=0.2, fc='k', ec='k')
 
         gx, gy, go = self.goal_pos
         dx, dy = orientations[go]
-        goal_arrow = self.ax.arrow(
-            gx, gy, dx*0.5, dy*0.5, head_width=0.3, head_length=0.3, fc='k', ec='k')
-        self.orientation_arrows.append(goal_arrow)
+        # Arrow length and head size reduced to fit inside the cell
+        self.ax.arrow(gx, gy, dx*0.25, dy*0.25, head_width=0.2,
+                      head_length=0.2, fc='k', ec='k')
 
     def connect_events(self):
         self.canvas.mpl_connect('button_press_event', self.on_press)
@@ -351,13 +370,13 @@ class GridGenerator(QWidget):
     def on_start_orientation_change(self, orientation: int):
         self.start_pos = (self.start_pos[0], self.start_pos[1], orientation)
         self.start_orientation_changed.emit(orientation)
-        self.setup_plot()  # Redraw plot to update arrow safely
+        self.setup_plot()
         self.canvas.draw_idle()
 
     def on_goal_orientation_change(self, orientation: int):
         self.goal_pos = (self.goal_pos[0], self.goal_pos[1], orientation)
         self.goal_orientation_changed.emit(orientation)
-        self.setup_plot()  # Redraw plot to update arrow safely
+        self.setup_plot()
         self.canvas.draw_idle()
 
     def _is_protected_cell(self, x: int, y: int) -> bool:
@@ -380,8 +399,7 @@ class GridGenerator(QWidget):
         if not self.is_dragged and event.inaxes:
             ix, iy = int(round(event.xdata)), int(round(event.ydata))
             if 0 <= ix < self.nx and 0 <= iy < self.ny and not self._is_protected_cell(ix, iy):
-                self.display_map[iy, ix] = 1 - \
-                    self.display_map[iy, ix]  # Bug fix: was iy, iy
+                self.display_map[iy, ix] = 1 - self.display_map[iy, ix]
                 self.im.set_data(self.display_map)
                 self.canvas.draw_idle()
         self.is_drawing = False
