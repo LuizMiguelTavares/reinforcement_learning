@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QButtonGroup,
     QSlider,
+    QFileDialog,
 )
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QScreen
@@ -42,6 +43,7 @@ class AppData:
     obstacle_map: Optional[np.ndarray] = None
     start: Optional[Tuple[int, int, int]] = (0, 0, 0)
     goal: Optional[Tuple[int, int, int]] = (9, 9, 0)
+    goal_orientation_irrelevant: bool = False
     agent_type: str = "Omnidirecional"
     # NOVAS VARIÁVEIS PARA OS SLIDERS
     param1: int = 50
@@ -102,7 +104,8 @@ class CompassWidget(QWidget):
             button = QPushButton(arrows[orientation])
             button.setObjectName("compassButton")
             button.setCheckable(True)
-            button.clicked.connect(lambda _, o=orientation: self.set_orientation(o))
+            button.clicked.connect(
+                lambda _, o=orientation: self.set_orientation(o))
             grid_layout.addWidget(button, row, col)
             self.buttons[orientation] = button
 
@@ -151,18 +154,19 @@ class MainWindow(QMainWindow):
             print(f"Warning: Could not load 'style.qss'. {e}")
 
         self.data = AppData()
-        self.data.goal = (self.data.grid_size[0] - 1, self.data.grid_size[1] - 1, 0)
 
         self.stacked_widget = QStackedWidget(self)
         self.setCentralWidget(self.stacked_widget)
 
         self.start_page = StartPage(self)
+        self.grid_source_page = GridSourcePage(self)
         self.config_page = GridConfigurationPage(self)
         self.grid_generator = GridGenerator(self)
         self.training_page = TrainingConfigurationPage(self)
         self.end_page = EndPage(self)
 
         self.stacked_widget.addWidget(self.start_page)
+        self.stacked_widget.addWidget(self.grid_source_page)
         self.stacked_widget.addWidget(self.config_page)
         self.stacked_widget.addWidget(self.grid_generator)
         self.stacked_widget.addWidget(self.training_page)
@@ -172,16 +176,33 @@ class MainWindow(QMainWindow):
         self.stacked_widget.setCurrentIndex(0)
 
     def connect_signals_and_navigation(self):
+        # Navigation
+        self.start_page.button_next.clicked.connect(
+            lambda: self.stacked_widget.setCurrentIndex(1)
+        )
+        self.grid_source_page.navigation_requested.connect(
+            self.go_to_config_page)
+        self.config_page.button_next.clicked.connect(self.go_to_grid_generator)
+        self.grid_generator.confirm_button.clicked.connect(
+            lambda: self.stacked_widget.setCurrentIndex(4)
+        )
+        self.training_page.button_finish.clicked.connect(
+            lambda: self.stacked_widget.setCurrentIndex(5)
+        )
+        self.end_page.button_close.clicked.connect(self.close)
+
+        # Data updates
         self.config_page.grid_size_changed.connect(
             lambda size: self.update_data("grid_size", size)
         )
         self.config_page.start_pos_changed.connect(
-            lambda pos: self.update_data("start", (pos[0], pos[1], self.data.start[2]))
+            lambda pos: self.update_data(
+                "start", (pos[0], pos[1], self.data.start[2]))
         )
         self.config_page.goal_pos_changed.connect(
-            lambda pos: self.update_data("goal", (pos[0], pos[1], self.data.goal[2]))
+            lambda pos: self.update_data(
+                "goal", (pos[0], pos[1], self.data.goal[2]))
         )
-
         self.grid_generator.start_orientation_changed.connect(
             lambda o: self.update_data(
                 "start", (self.data.start[0], self.data.start[1], o)
@@ -192,39 +213,39 @@ class MainWindow(QMainWindow):
                 "goal", (self.data.goal[0], self.data.goal[1], o)
             )
         )
+        self.grid_generator.goal_orientation_relevance_changed.connect(
+            lambda irrelevant: self.update_data(
+                "goal_orientation_irrelevant", irrelevant)
+        )
         self.grid_generator.grid_confirmed.connect(
             lambda map_data: self.update_data("obstacle_map", map_data)
         )
-
         self.training_page.agent_type_changed.connect(
             lambda agent: self.update_data("agent_type", agent)
         )
-        # CONECTA O SINAL DO SLIDER
         self.training_page.param_changed.connect(self.update_data)
 
-        self.start_page.button_next.clicked.connect(
-            lambda: self.stacked_widget.setCurrentIndex(1)
-        )
-        self.config_page.button_next.clicked.connect(self.go_to_grid_generator)
-        self.grid_generator.confirm_button.clicked.connect(
-            lambda: self.stacked_widget.setCurrentIndex(3)
-        )
-        self.training_page.button_finish.clicked.connect(
-            lambda: self.stacked_widget.setCurrentIndex(4)
-        )
-        self.end_page.button_close.clicked.connect(self.close)
+    def go_to_config_page(self, is_imported: bool):
+        if not is_imported:
+            self.update_data("obstacle_map", None)
+
+        self.config_page.update_view(is_imported)
+        self.stacked_widget.setCurrentIndex(2)
 
     def go_to_grid_generator(self):
+        if self.data.obstacle_map is not None:
+            rows, cols = self.data.obstacle_map.shape
+            self.update_data("grid_size", (cols, rows))
+
         self.grid_generator.update_grid(
             self.data.grid_size, self.data.start, self.data.goal
         )
-        self.stacked_widget.setCurrentIndex(2)
+        self.stacked_widget.setCurrentIndex(3)
 
     def update_data(self, field_name: str, value: Any):
         if hasattr(self.data, field_name):
             setattr(self.data, field_name, value)
             print(f"Updating self.data.{field_name} to {value}")
-            print("Current Data:", self.data)
         else:
             print(f"Error: Field '{field_name}' doesn't exist.")
 
@@ -243,6 +264,73 @@ class StartPage(QWidget):
         layout.addWidget(self.button_next)
 
 
+class GridSourcePage(QWidget):
+    navigation_requested = Signal(bool)
+
+    def __init__(self, main_window: QMainWindow):
+        super().__init__(main_window)
+        self.main_window = main_window
+
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.setSpacing(20)
+
+        title = QLabel("Grid Source")
+        title.setObjectName("titleLabel")
+
+        button_draw = QPushButton("Draw Grid from Scratch")
+        button_draw.setProperty("class", "navigation")
+        button_draw.clicked.connect(
+            lambda: self.navigation_requested.emit(False))
+
+        button_import = QPushButton("Import Grid from File")
+        button_import.setProperty("class", "navigation")
+        button_import.clicked.connect(self._handle_import)
+
+        self.import_status_label = QLabel("No file imported.")
+        self.import_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        layout.addWidget(title)
+        layout.addWidget(button_draw)
+        layout.addWidget(button_import)
+        layout.addWidget(self.import_status_label)
+
+    def _handle_import(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import Grid",
+            "",
+            "Numpy files (*.npy);;CSV files (*.csv)"
+        )
+
+        if not file_path:
+            return
+
+        try:
+            if file_path.endswith('.npy'):
+                grid_map = np.load(file_path)
+            elif file_path.endswith('.csv'):
+                grid_map = np.loadtxt(file_path, delimiter=',')
+            else:
+                raise ValueError("Unsupported file type")
+
+            if grid_map.ndim != 2 or not np.all(np.isin(grid_map, [0, 1])):
+                raise ValueError("Map must be a 2D array of 0s and 1s.")
+
+            rows, cols = grid_map.shape
+            self.main_window.update_data("obstacle_map", grid_map)
+            self.main_window.update_data("grid_size", (cols, rows))
+
+            file_name = file_path.split('/')[-1]
+            self.import_status_label.setText(f"Imported: {file_name}")
+
+            self.navigation_requested.emit(True)
+
+        except Exception as e:
+            self.import_status_label.setText(f"Error: {e}")
+            print(f"Failed to import grid: {e}")
+
+
 class GridConfigurationPage(QWidget):
     grid_size_changed = Signal(tuple)
     start_pos_changed = Signal(tuple)
@@ -250,6 +338,8 @@ class GridConfigurationPage(QWidget):
 
     def __init__(self, main_window: QMainWindow):
         super().__init__(main_window)
+        self.main_window = main_window
+
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title = QLabel("Grid Configuration")
@@ -260,10 +350,9 @@ class GridConfigurationPage(QWidget):
 
         self.spinbox_grid_cols = QSpinBox()
         self.spinbox_grid_cols.setRange(4, 100)
-        self.spinbox_grid_cols.setValue(10)
         self.spinbox_grid_rows = QSpinBox()
         self.spinbox_grid_rows.setRange(4, 100)
-        self.spinbox_grid_rows.setValue(10)
+
         self.spinbox_start_x = QSpinBox()
         self.spinbox_start_x.setMinimum(0)
         self.spinbox_start_y = QSpinBox()
@@ -284,35 +373,61 @@ class GridConfigurationPage(QWidget):
 
         layout.addWidget(title)
         layout.addLayout(form_layout)
-        layout.addWidget(self.button_next, alignment=Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.button_next,
+                         alignment=Qt.AlignmentFlag.AlignCenter)
 
-        self.spinbox_grid_cols.valueChanged.connect(self._on_grid_dimensions_changed)
-        self.spinbox_grid_rows.valueChanged.connect(self._on_grid_dimensions_changed)
+        self.spinbox_grid_cols.valueChanged.connect(
+            self._on_grid_dimensions_changed)
+        self.spinbox_grid_rows.valueChanged.connect(
+            self._on_grid_dimensions_changed)
         self.spinbox_start_x.valueChanged.connect(self._on_start_changed)
         self.spinbox_start_y.valueChanged.connect(self._on_start_changed)
         self.spinbox_goal_x.valueChanged.connect(self._on_goal_changed)
         self.spinbox_goal_y.valueChanged.connect(self._on_goal_changed)
+
+        self.update_view(False)
+
+    def update_view(self, is_imported: bool):
+        self.spinbox_grid_cols.setEnabled(not is_imported)
+        self.spinbox_grid_rows.setEnabled(not is_imported)
+
+        if is_imported:
+            cols, rows = self.main_window.data.grid_size
+            self.spinbox_grid_cols.setValue(cols)
+            self.spinbox_grid_rows.setValue(rows)
+        else:
+            self.spinbox_grid_cols.setValue(10)
+            self.spinbox_grid_rows.setValue(10)
+
         self._on_grid_dimensions_changed()
 
-    def _on_grid_dimensions_changed(self):
+    def _on_grid_dimensions_changed(self, value=None):
         cols = self.spinbox_grid_cols.value()
         rows = self.spinbox_grid_rows.value()
         self.spinbox_start_x.setMaximum(cols - 1)
         self.spinbox_start_y.setMaximum(rows - 1)
         self.spinbox_goal_x.setMaximum(cols - 1)
         self.spinbox_goal_y.setMaximum(rows - 1)
-        self.spinbox_goal_x.setValue(cols - 1)
-        self.spinbox_goal_y.setValue(rows - 1)
+
+        if not self.spinbox_grid_cols.isEnabled():
+            self.spinbox_goal_x.setValue(
+                min(self.spinbox_goal_x.value(), cols - 1))
+            self.spinbox_goal_y.setValue(
+                min(self.spinbox_goal_y.value(), rows - 1))
+        else:
+            self.spinbox_goal_x.setValue(cols - 1)
+            self.spinbox_goal_y.setValue(rows - 1)
+
         self.grid_size_changed.emit((cols, rows))
         self._on_start_changed()
         self._on_goal_changed()
 
-    def _on_start_changed(self):
+    def _on_start_changed(self, value=None):
         self.start_pos_changed.emit(
             (self.spinbox_start_x.value(), self.spinbox_start_y.value())
         )
 
-    def _on_goal_changed(self):
+    def _on_goal_changed(self, value=None):
         self.goal_pos_changed.emit(
             (self.spinbox_goal_x.value(), self.spinbox_goal_y.value())
         )
@@ -322,6 +437,7 @@ class GridGenerator(QWidget):
     grid_confirmed = Signal(np.ndarray)
     start_orientation_changed = Signal(int)
     goal_orientation_changed = Signal(int)
+    goal_orientation_relevance_changed = Signal(bool)
 
     def __init__(self, main_window: QMainWindow):
         super().__init__(main_window)
@@ -330,17 +446,31 @@ class GridGenerator(QWidget):
         main_layout = QVBoxLayout(self)
         content_layout = QHBoxLayout()
 
+        start_controls_layout = QVBoxLayout()
         self.start_compass = CompassWidget("Start Orientation")
+        start_controls_layout.addStretch()
+        start_controls_layout.addWidget(self.start_compass)
+        start_controls_layout.addStretch()
+
+        goal_controls_layout = QVBoxLayout()
         self.goal_compass = CompassWidget("Goal Orientation")
+        self.button_irrelevant = QPushButton("Irrelevant Orientation")
+        self.button_irrelevant.setCheckable(True)
+        self.button_irrelevant.setProperty("class", "toggleButton")
+        goal_controls_layout.addStretch()
+        goal_controls_layout.addWidget(self.goal_compass)
+        goal_controls_layout.addWidget(
+            self.button_irrelevant, 0, Qt.AlignmentFlag.AlignCenter)
+        goal_controls_layout.addStretch()
 
         self.fig = Figure(figsize=(8, 8), tight_layout=True)
         self.canvas = FigureCanvas(self.fig)
         self.ax = self.fig.add_subplot(111)
         self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-        content_layout.addWidget(self.start_compass)
+        content_layout.addLayout(start_controls_layout)
         content_layout.addWidget(self.canvas, 1)
-        content_layout.addWidget(self.goal_compass)
+        content_layout.addLayout(goal_controls_layout)
 
         self.confirm_button = QPushButton("Confirm Grid and Continue")
         self.confirm_button.setObjectName("confirmButton")
@@ -355,15 +485,11 @@ class GridGenerator(QWidget):
         bounds = [-0.5, 0.5, 1.5, 2.5, 3.5]
         self.norm = BoundaryNorm(bounds, self.cmap.N)
 
-        self.nx = 0
-        self.ny = 0
-        self.start_pos = None
-        self.goal_pos = None
+        self.nx, self.ny = 0, 0
+        self.start_pos, self.goal_pos = None, None
         self.display_map = None
-        self.is_drawing = False
-        self.is_dragged = False
-        self.last_pos = None
-        self.drag_mode = "draw"
+        self.is_drawing, self.is_dragged = False, False
+        self.last_pos, self.drag_mode = None, "draw"
 
         self.connect_events()
 
@@ -376,18 +502,26 @@ class GridGenerator(QWidget):
         self.nx, self.ny = grid_size
         self.start_pos = start_pos
         self.goal_pos = goal_pos
-        self.display_map = np.zeros((self.ny, self.nx), dtype=int)
+
+        if self.main_window.data.obstacle_map is not None:
+            self.display_map = self.main_window.data.obstacle_map.copy().astype(int)
+        else:
+            self.display_map = np.zeros((self.ny, self.nx), dtype=int)
+
+        self.display_map[self.start_pos[1], self.start_pos[0]] = 0
+        self.display_map[self.goal_pos[1], self.goal_pos[0]] = 0
+
         self.display_map[self.start_pos[1], self.start_pos[0]] = 2
         self.display_map[self.goal_pos[1], self.goal_pos[0]] = 3
+
         self.start_compass.set_orientation(start_pos[2])
         self.goal_compass.set_orientation(goal_pos[2])
         self.setup_plot()
 
     def setup_plot(self):
         self.ax.clear()
-
         self.im = self.ax.imshow(
-            self.display_map, cmap=self.cmap, norm=self.norm, interpolation="nearest"
+            self.display_map, cmap=self.cmap, norm=self.norm, interpolation="nearest", origin='lower'
         )
         self.ax.set_xticks(np.arange(-0.5, self.nx, 1), minor=True)
         self.ax.set_yticks(np.arange(-0.5, self.ny, 1), minor=True)
@@ -395,10 +529,8 @@ class GridGenerator(QWidget):
         self.ax.tick_params(which="minor", size=0)
         self.ax.set_xticks([])
         self.ax.set_yticks([])
-
         self.ax.set_xlim(-0.5, self.nx - 0.5)
-        self.ax.set_ylim(self.ny - 0.5, -0.5)
-
+        self.ax.set_ylim(-0.5, self.ny - 0.5)
         self.ax.set_title(
             "Click/drag to draw obstacles. Use compasses to set orientation."
         )
@@ -406,50 +538,42 @@ class GridGenerator(QWidget):
         self.canvas.draw()
 
     def _draw_orientation_arrows(self):
-        orientations = {
-            0: (1, 0),
-            1: (0.707, -0.707),
-            2: (0, -1),
-            3: (-0.707, -0.707),
-            4: (-1, 0),
-            5: (-0.707, 0.707),
-            6: (0, 1),
-            7: (0.707, 0.707),
+        # MODIFICATION: This dictionary defines vectors for a Cartesian plane (Y grows upwards)
+        # This is for VISUALIZATION ONLY and does not affect the saved data index.
+        visual_orientations = {
+            0: (1, 0),       # East
+            1: (0.707, 0.707),  # North-East
+            2: (0, 1),       # North
+            3: (-0.707, 0.707),  # North-West
+            4: (-1, 0),      # West
+            5: (-0.707, -0.707),  # South-West
+            6: (0, -1),      # South
+            7: (0.707, -0.707)  # South-East
         }
 
         sx, sy, so = self.start_pos
-        dx, dy = orientations[so]
-        self.ax.arrow(
-            sx,
-            sy,
-            dx * 0.25,
-            dy * 0.25,
-            head_width=0.2,
-            head_length=0.2,
-            fc="k",
-            ec="k",
-        )
+        # Use the visual dictionary to get the correct arrow direction
+        dx, dy = visual_orientations[so]
+        self.ax.arrow(sx, sy, dx * 0.25, dy * 0.25,
+                      head_width=0.2, head_length=0.2, fc="k", ec="k")
 
-        gx, gy, go = self.goal_pos
-        dx, dy = orientations[go]
-        self.ax.arrow(
-            gx,
-            gy,
-            dx * 0.25,
-            dy * 0.25,
-            head_width=0.2,
-            head_length=0.2,
-            fc="k",
-            ec="k",
-        )
+        if not self.main_window.data.goal_orientation_irrelevant:
+            gx, gy, go = self.goal_pos
+            # Use the visual dictionary to get the correct arrow direction
+            dx, dy = visual_orientations[go]
+            self.ax.arrow(gx, gy, dx * 0.25, dy * 0.25,
+                          head_width=0.2, head_length=0.2, fc="k", ec="k")
 
     def connect_events(self):
         self.canvas.mpl_connect("button_press_event", self.on_press)
         self.canvas.mpl_connect("button_release_event", self.on_release)
         self.canvas.mpl_connect("motion_notify_event", self.on_motion)
         self.confirm_button.clicked.connect(self.on_confirm)
-        self.start_compass.orientation_changed.connect(self.on_start_orientation_change)
-        self.goal_compass.orientation_changed.connect(self.on_goal_orientation_change)
+        self.start_compass.orientation_changed.connect(
+            self.on_start_orientation_change)
+        self.goal_compass.orientation_changed.connect(
+            self.on_goal_orientation_change)
+        self.button_irrelevant.toggled.connect(self._on_relevance_changed)
 
     def on_start_orientation_change(self, orientation: int):
         self.start_pos = (self.start_pos[0], self.start_pos[1], orientation)
@@ -463,10 +587,15 @@ class GridGenerator(QWidget):
         self.setup_plot()
         self.canvas.draw_idle()
 
+    def _on_relevance_changed(self, is_irrelevant: bool):
+        self.goal_compass.setEnabled(not is_irrelevant)
+        self.goal_orientation_relevance_changed.emit(is_irrelevant)
+        self.setup_plot()
+        self.canvas.draw_idle()
+
     def _is_protected_cell(self, x: int, y: int) -> bool:
-        return (x == self.start_pos[0] and y == self.start_pos[1]) or (
-            x == self.goal_pos[0] and y == self.goal_pos[1]
-        )
+        return (x == self.start_pos[0] and y == self.start_pos[1]) or \
+               (x == self.goal_pos[0] and y == self.goal_pos[1])
 
     def on_press(self, event):
         if not event.inaxes:
@@ -475,18 +604,15 @@ class GridGenerator(QWidget):
         self.is_dragged = False
         ix, iy = int(round(event.xdata)), int(round(event.ydata))
         if 0 <= ix < self.nx and 0 <= iy < self.ny:
-            self.drag_mode = "erase" if self.display_map[iy, ix] == 1 else "draw"
+            self.drag_mode = "erase" if self.display_map[iy,
+                                                         ix] == 1 else "draw"
 
     def on_release(self, event):
         if not self.is_drawing:
             return
         if not self.is_dragged and event.inaxes:
             ix, iy = int(round(event.xdata)), int(round(event.ydata))
-            if (
-                0 <= ix < self.nx
-                and 0 <= iy < self.ny
-                and not self._is_protected_cell(ix, iy)
-            ):
+            if 0 <= ix < self.nx and 0 <= iy < self.ny and not self._is_protected_cell(ix, iy):
                 self.display_map[iy, ix] = 1 - self.display_map[iy, ix]
                 self.im.set_data(self.display_map)
                 self.canvas.draw_idle()
@@ -497,11 +623,7 @@ class GridGenerator(QWidget):
             return
         self.is_dragged = True
         ix, iy = int(round(event.xdata)), int(round(event.ydata))
-        if (
-            0 <= ix < self.nx
-            and 0 <= iy < self.ny
-            and (ix, iy) != getattr(self, "last_pos", None)
-        ):
+        if 0 <= ix < self.nx and 0 <= iy < self.ny and (ix, iy) != self.last_pos:
             if not self._is_protected_cell(ix, iy):
                 self.display_map[iy, ix] = 1 if self.drag_mode == "draw" else 0
                 self.im.set_data(self.display_map)
@@ -515,23 +637,20 @@ class GridGenerator(QWidget):
 
 class TrainingConfigurationPage(QWidget):
     agent_type_changed = Signal(str)
-    # NOVO SINAL para os sliders (nome_do_parametro, valor)
     param_changed = Signal(str, int)
 
     def __init__(self, main_window: QMainWindow):
         super().__init__(main_window)
         self.main_window = main_window
         self.agent_types = ["Omnidirecional", "Diferential", "Car Like"]
-        self.param_names = [
-            f.name for f in fields(AppData) if f.name.startswith("param")
-        ]
+        self.param_names = [f.name for f in fields(
+            AppData) if f.name.startswith("param")]
         self.value_labels = {}
 
         main_layout = QVBoxLayout(self)
         main_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.setSpacing(40)
 
-        # --- Seção de Seleção de Agente ---
         title = QLabel("Select Agent Type")
         title.setObjectName("titleLabel")
         main_layout.addWidget(title, alignment=Qt.AlignmentFlag.AlignCenter)
@@ -546,19 +665,16 @@ class TrainingConfigurationPage(QWidget):
             button.setProperty("class", "agentButton")
             button.setCheckable(True)
             button.clicked.connect(
-                lambda checked, name=agent_name: (
-                    self.select_agent(name) if checked else None
-                )
-            )
+                lambda checked, name=agent_name: self.select_agent(name) if checked else None)
             buttons_layout.addWidget(button)
             self.buttons[agent_name] = button
             self.button_group.addButton(button)
         main_layout.addLayout(buttons_layout)
 
-        # --- Seção dos Sliders ---
         sliders_title = QLabel("Training Parameters")
         sliders_title.setObjectName("titleLabel")
-        main_layout.addWidget(sliders_title, alignment=Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(
+            sliders_title, alignment=Qt.AlignmentFlag.AlignCenter)
 
         sliders_container = QWidget()
         sliders_layout = QFormLayout(sliders_container)
@@ -570,35 +686,25 @@ class TrainingConfigurationPage(QWidget):
             slider = QSlider(Qt.Orientation.Horizontal)
             slider.setRange(1, 100)
             slider.setValue(50)
-
-            # Label para mostrar o valor atual do slider
             self.value_labels[param_name] = QLabel("50")
             self.value_labels[param_name].setObjectName("sliderValueLabel")
             self.value_labels[param_name].setMinimumWidth(30)
-
             slider.valueChanged.connect(
-                lambda value, name=param_name: self._on_slider_changed(name, value)
-            )
-
+                lambda value, name=param_name: self._on_slider_changed(name, value))
             slider_row_layout = QHBoxLayout()
             slider_row_layout.addWidget(slider)
             slider_row_layout.addWidget(self.value_labels[param_name])
-
             sliders_layout.addRow(f"Parameter {i+1}:", slider_row_layout)
-            # Emite o valor inicial
             self.param_changed.emit(param_name, 50)
 
         main_layout.addWidget(sliders_container)
         main_layout.addStretch()
 
-        # --- Botão de Finalizar ---
         self.button_finish = QPushButton("Finish")
         self.button_finish.setProperty("class", "navigation")
-        main_layout.addWidget(
-            self.button_finish, alignment=Qt.AlignmentFlag.AlignCenter
-        )
+        main_layout.addWidget(self.button_finish,
+                              alignment=Qt.AlignmentFlag.AlignCenter)
 
-        # Seleciona o primeiro botão como padrão
         self.buttons[self.agent_types[0]].setChecked(True)
         self.select_agent(self.agent_types[0])
 
@@ -606,7 +712,6 @@ class TrainingConfigurationPage(QWidget):
         self.agent_type_changed.emit(agent_name)
 
     def _on_slider_changed(self, name: str, value: int):
-        """Atualiza o label e emite o sinal quando o slider muda."""
         self.value_labels[name].setText(str(value))
         self.param_changed.emit(name, value)
 
