@@ -2,10 +2,11 @@
 
 import math, time
 from collections import deque
-from typing import List, Tuple, Optional
+from typing import Tuple, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
+import hashlib
 
 # ---------------------------------------------------------------------
 # GridWorld environment
@@ -49,7 +50,7 @@ class GridWorld:
             self._populate_obstacles()
         
         self.start = (0, 0, self.angle_to_idx(0.0)) if start is None else (start[0], start[1], self.angle_to_idx(start[2]))
-        self.goal  = (height - 1, width - 1, self.angle_to_idx(0.0)) if goal is None else (goal[0], goal[1], self.angle_to_idx(goal[2]))
+        self.goal  = (self.height - 1, self.width - 1, self.angle_to_idx(0.0)) if goal is None else (goal[0], goal[1], self.angle_to_idx(goal[2]))
         self.grid[self.start[0:2]] = 0
         self.grid[self.goal[0:2]] = 0
 
@@ -83,9 +84,9 @@ class GridWorld:
             self.precompute_nearby_obstacles_reward()
 
         if self.allow_only_forward:
-            self.num_actions = 8
+            self.num_actions = 3
         else:
-            self.num_actions = 9
+            self.num_actions = 4
 
         # Precompute action lookup table -----------------------------
         self._action_lookup = np.empty((self.num_angles, self.num_actions, 3), dtype=int)
@@ -156,23 +157,13 @@ class GridWorld:
             options = [
                 (rint(math.sin(ang)),  rint(math.cos(ang)),   0),
                 (0, 0, +1),
-                (0, 0, +2),
-                (0, 0, +3),
-                (0, 0, +4),
-                (0, 0, +5),
-                (0, 0, +6),
-                (0, 0, +7),]
+                (0, 0, -1),]
         else:
             options = [
                 (rint(math.sin(ang)),  rint(math.cos(ang)),   0),
                 (-rint(math.sin(ang)),  -rint(math.cos(ang)),   0),
                 (0, 0, +1),
-                (0, 0, +2),
-                (0, 0, +3),
-                (0, 0, +4),
-                (0, 0, +5),
-                (0, 0, +6),
-                (0, 0, +7),]
+                (0, 0, -1),]
 
         dr, dc, d_idx = options[action]
         new_idx = (ang_idx + d_idx) % self.num_angles
@@ -232,6 +223,10 @@ class GridWorld:
         # energy/turn penalty
         reward += -self.energy_consumption_gain * turn_angle / math.pi
 
+        # Not moving penalty
+        if dr == 0 and dc == 0:
+            reward += self.reward_step
+
         return next_state, reward, done
 
         
@@ -270,15 +265,16 @@ class QLearningAgent:
         env: GridWorld,
         alpha: float = 0.1,
         gamma: float = 0.99,
-        epsilon: float = 1.0,
-        min_epsilon: float = 0.05,
-        epsilon_decay: float = 0.9,
-        schedule: str = "adaptive",           # 'adaptive' | 'exponential'
+        min_epsilon: float = 0.1,
+        max_epsilon: float = 0.9,
+        max_epsilon_band: float = 0.3, # first 30% of the train the epsilon value will be the max_epsilon
+        min_epsilon_band: float = 0.1, # last 10% of the train the epsilon value will be the min_epsilon
     ):
         self.env = env
         self.alpha, self.gamma = alpha, gamma
-        self.epsilon, self.min_eps, self.decay = epsilon, min_epsilon, epsilon_decay
-        self.schedule = schedule
+        self.epsilon, self.min_eps, self.max_eps = max_epsilon, min_epsilon, max_epsilon
+        self.max_epsilon_band = max_epsilon_band
+        self.min_epsilon_band = min_epsilon_band
         self.Q = np.zeros((env.height, env.width, env.num_angles, env.num_actions))
 
     def choose_action(self, state: Tuple[int, int, int]) -> int:
@@ -288,24 +284,34 @@ class QLearningAgent:
         q = self.Q[r, c, ang_idx]
         return int(np.random.choice(np.flatnonzero(q == q.max())))
 
+    def choose_action_bias(self, state, force_move = False) -> int:
+        move_idxs = [0] if self.env.allow_only_forward else [0, 1]
+        if force_move:
+            # exploration still allowed, but among moves only
+            if np.random.rand() < self.epsilon:
+                return int(np.random.choice(move_idxs))
+            r, c, k = state
+            q = self.Q[r, c, k]
+            return move_idxs[int(np.argmax(q[move_idxs]))]
+        else:
+            return self.choose_action(state)
+
     def update(self, s, a, r, s2, done) -> None:
         r0, c0, k0 = s
         r1, c1, k1 = s2
         target = r if done else r + self.gamma * self.Q[r1, c1, k1].max()
         self.Q[r0, c0, k0, a] += self.alpha * (target - self.Q[r0, c0, k0, a])
 
-    def decay_epsilon(self, success_rate: float, threshold: float = 0.8, episodes: int = 5000, ep: int = 0) -> None:
-        if self.schedule == "adaptive":
-            if success_rate >= threshold and self.epsilon > self.min_eps:
-                self.epsilon = max(self.min_eps, self.epsilon * self.decay)
-        elif self.schedule == "mix":
-            if ep/episodes < 0.8:
-                self.epsilon = 0.95
-            else:
-                self.epsilon = max(self.min_eps, self.epsilon * self.decay)
+    def decay_epsilon(self, episodes: int = 5000, ep: int = 0) -> None:
+        min_band = int(episodes * (1 - self.min_epsilon_band))
+        max_band = int(episodes * self.max_epsilon_band)
+        if ep < max_band:
+            self.epsilon = self.max_eps
+        elif ep < min_band:
+            self.epsilon = self.max_eps - ((self.max_eps - self.min_eps) / (min_band - max_band)) * (ep - max_band) 
         else:
-            self.epsilon = max(self.min_eps, self.epsilon * self.decay)
-
+            self.epsilon = self.min_eps
+        pass
 
 # ---------------------------------------------------------------------
 # Training & helpers
@@ -317,6 +323,7 @@ def train(
     window: int = 100,
     print_every: int = 100,
     threshold: float = 0.8,
+    max_steps: int = 1000,
     change_start_percentage: int = 0.2,
 ):
     rewards, successes, ep_durations = deque(maxlen=window), deque(maxlen=window), []
@@ -328,7 +335,12 @@ def train(
 
     so = 0
     sn = 0
-
+    group_success = []
+    group_time_begin = time.perf_counter()
+    ep_time_mean = []
+    actions_per_episode = []
+    consecutive_turns = []
+    stuck_count = []
     for ep in range(1, episodes + 1):
         ep_begin = time.perf_counter()
 
@@ -344,28 +356,76 @@ def train(
 
             s, tot, done = env.agent_pos, 0.0, False
             sn += 1
-            
-        while not done:
-            a = agent.choose_action(s)
+        
+        steps = 0
+        same_place = 0
+        same_place_more_than_10 = 0
+        force_move = False
+        bump_streak = 0
+        got_stuck = 0
+        while not done and steps < max_steps:
+            a = agent.choose_action_bias(s, force_move=force_move)
             s2, r, done = env.step(a)
             agent.update(s, a, r, s2, done)
+            if s2[0] == s[0] and s2[1] == s[1] and s2[2] != s[2]:
+                # agent is in the same place but with different angle
+                same_place += 1
+            elif s2[0] == s[0] and s2[1] == s[1] and s2[2] == s[2]:
+                # agent is in the same place and same angle
+                bump_streak += 1
+            else:
+                bump_streak = 0
+                same_place = 0
+                force_move = False
+            
+            if same_place > 10:
+                same_place_more_than_10 += 1
+                force_move = True
+            
+            if bump_streak > 10 and force_move:
+                # agent is stuck in the same place for too long, force move
+                got_stuck += 1
+                force_move = False
+
             s, tot = s2, tot + r
+
+            steps += 1
 
         # timing ------------------------------------------------------
         ep_time = time.perf_counter() - ep_begin
+        ep_time_mean.append(ep_time)
         ep_durations.append(ep_time)
+        actions_per_episode.append(steps)
+        consecutive_turns.append(same_place_more_than_10)
+        stuck_count.append(got_stuck)
 
         rewards.append(tot)
         successes.append(1 if done else 0)
-        agent.decay_epsilon(float(np.mean(successes)), threshold, episodes, ep)
+        group_success.append(1 if done else 0)
+        agent.decay_epsilon(episodes, ep)
 
         if ep % print_every == 0:
+            group_duration = time.perf_counter() - group_time_begin
+            group_time_begin = time.perf_counter()
             print(
                 f"Ep {ep:5d} | AvgR={np.mean(rewards):7.2f} | "
+                f"ActionsMean={np.mean(actions_per_episode):5.1f} | "
+                f"ActionsStDev={np.std(actions_per_episode):5.1f} | "
                 f"Succ={np.mean(successes)*100:5.1f}% | "
+                f"GroupSucc={np.mean(group_success)*100:5.1f}% | "
+                f"ConsecutiveTurnsMean={np.mean(consecutive_turns):.1f} | "
+                f"ConsecutiveTurnsStDev={np.std(consecutive_turns):.1f} | "
+                f"StuckCountMean={np.mean(stuck_count):.1f} | "
+                f"StuckCountStDev={np.std(stuck_count):.1f} | "
                 f"ε={agent.epsilon:.3f} | "
-                f"EpTime={ep_time:.3f}s"
+                f"EpTime={np.mean(ep_time_mean):.3f}s | "
+                f"GroupTime={group_duration:.3f}s | "
             )
+            ep_time_mean.clear()
+            group_success.clear()
+            actions_per_episode.clear()
+            consecutive_turns.clear()
+            stuck_count.clear()
 
     total_time = time.perf_counter() - t_start
     print(f"\nTraining finished in {total_time:.2f} seconds "
@@ -375,6 +435,170 @@ def train(
 
     return list(ep_durations) 
 
+def train_adaptative(
+    env,
+    agent,
+    window: int = 100,
+    max_steps: int = 1000,
+    inc_step: float = 0.02,
+    success_window: int = 10,
+    change_start_percentage: int = 0.2,
+    success_countdown: int = 5,
+):
+    rewards, successes, ep_durations = deque(maxlen=window), deque(maxlen=window), []
+    t_start = time.perf_counter()
+
+    if change_start_percentage > 1:
+        print("Warning: change_start_percentage should be between 0 and 1. Setting to 0.")
+        change_start_percentage = 0
+
+    so = 0
+    sn = 0
+    group_success = []
+    max_group_success = 0.0
+    max_group_success_countdown = 0
+    group_time_begin = time.perf_counter()
+    ep_time_mean = []
+    actions_per_episode = []
+    consecutive_turns = []
+    stuck_count = []
+    save_epsilon = []
+    agent.epsilon = agent.max_eps
+    save_epsilon.append(agent.epsilon)
+    success_window_count = []
+    metrics_rows = []
+    ep = 0
+    trained = False
+    while not trained:
+        ep += 1
+        ep_begin = time.perf_counter()
+
+        if change_start_percentage <= np.random.rand():
+            s, tot, done = env.reset(), 0.0, False
+            so += 1
+        else:
+            r, c = np.random.randint(0, env.height), np.random.randint(0, env.width)
+            k = np.random.randint(env.num_angles)
+            while not env.reset_new_position((r, c, k)):
+                r, c = np.random.randint(0, env.height), np.random.randint(0, env.width)
+                k = np.random.randint(env.num_angles)
+
+            s, tot, done = env.agent_pos, 0.0, False
+            sn += 1
+        
+        steps = 0
+        same_place = 0
+        same_place_more_than_10 = 0
+        force_move = False
+        bump_streak = 0
+        got_stuck = 0
+        while not done and steps < max_steps:
+            a = agent.choose_action_bias(s, force_move=force_move)
+            s2, r, done = env.step(a)
+            agent.update(s, a, r, s2, done)
+            if s2[0] == s[0] and s2[1] == s[1] and s2[2] != s[2]:
+                # agent is in the same place but with different angle
+                same_place += 1
+            elif s2[0] == s[0] and s2[1] == s[1] and s2[2] == s[2]:
+                # agent is in the same place and same angle
+                bump_streak += 1
+            else:
+                bump_streak = 0
+                same_place = 0
+                force_move = False
+            
+            if same_place > 10:
+                same_place_more_than_10 += 1
+                force_move = True
+            
+            if bump_streak > 10 and force_move:
+                # agent is stuck in the same place for too long, force move
+                got_stuck += 1
+                force_move = False
+
+            s, tot = s2, tot + r
+
+            steps += 1
+        
+        success_window_count.append(1 if done else 0)
+
+        # timing ------------------------------------------------------
+        ep_time = time.perf_counter() - ep_begin
+        ep_time_mean.append(ep_time)
+        ep_durations.append(ep_time)
+        actions_per_episode.append(steps)
+        consecutive_turns.append(same_place_more_than_10)
+        stuck_count.append(got_stuck)
+
+        rewards.append(tot)
+        successes.append(1 if done else 0)
+        group_success.append(1 if done else 0)
+        # agent.decay_epsilon(episodes, ep) # No decay in adaptative training
+
+        if ep % success_window == 0:
+            group_duration = time.perf_counter() - group_time_begin
+            group_time_begin = time.perf_counter()
+            group_success_mean = np.mean(group_success)
+            print(
+                f"Ep {ep:5d} | AvgR={np.mean(rewards):7.2f} | "
+                f"ActionsMean={np.mean(actions_per_episode):5.1f} | "
+                f"ActionsStDev={np.std(actions_per_episode):5.1f} | "
+                f"Succ={np.mean(successes)*100:5.1f}% | "
+                f"GroupSucc={group_success_mean*100:5.1f}% | "
+                f"ConsecutiveTurnsMean={np.mean(consecutive_turns):.1f} | "
+                f"ConsecutiveTurnsStDev={np.std(consecutive_turns):.1f} | "
+                f"StuckCountMean={np.mean(stuck_count):.1f} | "
+                f"StuckCountStDev={np.std(stuck_count):.1f} | "
+                f"ε={agent.epsilon:.3f} | "
+                f"EpTime={np.mean(ep_time_mean):.3f}s | "
+                f"GroupTime={group_duration:.3f}s | "
+            )
+
+            if group_success_mean > max_group_success:
+                max_group_success = group_success_mean
+                max_group_success_countdown -= 2
+            else:
+                max_group_success_countdown += 1
+
+            if max_group_success_countdown > success_countdown:
+                agent.epsilon = max(agent.min_eps, agent.epsilon - inc_step)
+
+            row = [
+                ep,
+                float(np.mean(rewards)),
+                float(np.mean(actions_per_episode)),
+                float(np.std(actions_per_episode)),
+                float(np.mean(successes) * 100.0),
+                float(np.mean(group_success) * 100.0),
+                float(np.mean(consecutive_turns)),
+                float(np.std(consecutive_turns)),
+                float(np.mean(stuck_count)),
+                float(np.std(stuck_count)),
+                float(agent.epsilon),
+                float(np.mean(ep_time_mean)),
+                float(group_duration),
+            ]
+            metrics_rows.append(row)
+            
+            ep_time_mean.clear()
+            group_success.clear()
+            actions_per_episode.clear()
+            consecutive_turns.clear()
+            stuck_count.clear()
+
+            # break loop if epsilon reached minimum
+            if agent.epsilon <= agent.min_eps:
+                trained = True
+                print(f"Training finished at episode {ep} with epsilon {agent.epsilon:.3f}.")
+
+    total_time = time.perf_counter() - t_start
+    print(f"\nTraining finished in {total_time:.2f} seconds "
+          f"({total_time/ep:.3f} s/episode on average).")
+
+    print(f"Start changes: {(sn/ep)*100:.1f}%, No start changes: {so/ep*100:.1f}%")
+    metrics_mat = np.asarray(metrics_rows, dtype=np.float32)
+
+    return list(ep_durations), save_epsilon, metrics_mat
 
 def greedy_path(env: GridWorld, agent: QLearningAgent, limit: int = 1000):
     backup = agent.epsilon
@@ -390,116 +614,6 @@ def greedy_path(env: GridWorld, agent: QLearningAgent, limit: int = 1000):
             break
     agent.epsilon = backup
     return path
-
-# # ---------------------------------------------------------------------
-# # Combined visualisation
-# # ---------------------------------------------------------------------
-# def draw_q_heatmap(ax, env, agent):
-#     V = agent.Q.max(axis=2)  # best over actions
-#     cmap_val = "turbo" if "turbo" in plt.colormaps() else "plasma"
-#     V_mask = np.ma.masked_where(env.grid == 1, V)
-#     im = ax.imshow(V_mask, cmap=cmap_val, origin="lower", interpolation="nearest")
-#     plt.colorbar(im, ax=ax, fraction=0.046)
-
-#     ax.imshow(np.ma.masked_where(env.grid == 0, env.grid),
-#               cmap="gray_r", origin="lower", vmin=0, vmax=1, alpha=1, interpolation="nearest")
-
-#     ax.scatter(env.start[1], env.start[0], marker="o", c="lime", s=100, zorder=5)
-#     ax.scatter(env.goal[1],  env.goal[0],  marker="*", c="red",  s=150, zorder=5)
-#     ax.set_title("State Values")
-#     ax.set_xticks([]); ax.set_yticks([])
-
-# def path_image(env: GridWorld, path):
-#     img = np.ones((env.height, env.width, 3))
-#     img[env.grid == 1] = (0, 0, 0)
-
-#     sr, sc = env.start
-#     gr, gc = env.goal
-#     img[sr, sc] = (0, 1, 0)   # start (green)
-#     img[gr, gc] = (1, 0, 0)   # goal  (red)
-
-#     for step in path:
-#         r, c = step[:2]  # supports (r,c) or (r,c,angle)
-#         if (r, c) not in ((sr, sc), (gr, gc)) and env.grid[r, c] == 0:
-#             img[r, c] = (0.5, 0.5, 1)
-#     return img
-
-# def combined_vis(env: GridWorld, agent: QLearningAgent, path):
-#     fig, axs = plt.subplots(2, 2, figsize=(9, 9))
-
-#     # --- (0,0) Greedy path ------------------------------------------
-#     img = path_image(env, path)
-#     axs[0, 0].imshow(img, origin="lower", interpolation="nearest")
-#     axs[0, 0].set_xlim([-0.5, env.width-0.5])
-#     axs[0, 0].set_ylim([-0.5, env.height-0.5])
-#     axs[0, 0].set_xlabel("x (cols)")
-#     axs[0, 0].set_ylabel("y (rows)")
-#     axs[0, 0].set_title("Greedy Path (Cartesian view)")
-#     axs[0, 0].set_xticks(range(env.width))
-#     axs[0, 0].set_yticks(range(env.height))
-
-#     # --- (0,1) Q heatmap + greedy policy arrows ----------------------
-#     draw_q_heatmap(axs[0, 1], env, agent)
-
-#     # --- (1,0) Exploration (log) ------------------------------------
-#     max_lin = max(1, int(env.grid_explored.max()))
-#     draw_explored_heatmap(axs[1, 0], env, log_scale=True,
-#                           vmin=0, vmax=np.log10(max_lin + 1))
-
-#     # --- (1,1) Exploration (linear) ---------------------------------
-#     draw_explored_heatmap(axs[1, 1], env, log_scale=False,
-#                           vmin=0, vmax=max_lin)
-
-#     plt.tight_layout()
-#     plt.show()
-
-
-# # ---------------------------------------------------------------------
-# # Heat-map of exploration frequency
-# # ---------------------------------------------------------------------
-# def draw_explored_heatmap(
-#     ax,
-#     env: GridWorld,
-#     log_scale: bool = True,
-#     vmin: Optional[float] = None,
-#     vmax: Optional[float] = None,
-# ) -> None:
-#     # 1) Prepare data
-#     explored = env.grid_explored.astype(float)
-#     if log_scale:
-#         explored = np.log10(explored + 1)   # keeps zeros at 0
-
-#     # 2) Mask obstacles
-#     explored_mask = np.ma.masked_where(env.grid == 1, explored)
-
-#     # 3) Heatmap
-#     im = ax.imshow(
-#         explored_mask,
-#         cmap="inferno",
-#         origin="lower",
-#         interpolation="nearest",
-#         vmin=vmin,
-#         vmax=vmax,
-#     )
-#     plt.colorbar(im, ax=ax, fraction=0.046,
-#                  label="Visits (log₁₀)" if log_scale else "Visits")
-
-#     # 4) Obstacles + markers
-#     ax.imshow(
-#         np.ma.masked_where(env.grid == 0, env.grid),
-#         cmap="gray_r",
-#         origin="lower",
-#         vmin=0,
-#         vmax=1,
-#         interpolation="nearest",
-#         alpha=1,
-#     )
-#     ax.scatter(env.start[1], env.start[0], marker="o", c="lime", s=100, zorder=5)
-#     ax.scatter(env.goal[1],  env.goal[0],  marker="*", c="red",  s=150, zorder=5)
-
-#     ax.set_title("Exploration Heat-map (log)" if log_scale else "Exploration Heat-map (linear)")
-#     ax.set_xticks([]); ax.set_yticks([])
-
 
 # ---------------------------------------------------------------------
 # Combined visualisation
@@ -568,6 +682,28 @@ def combined_vis(env: GridWorld, agent: QLearningAgent, path):
     plt.tight_layout()
     plt.show()
 
+def save_artifacts(path: str, env, agent, note: str = "", train_metrics: np.ndarray = None):
+    def _sha1(arr):
+        import hashlib
+        h = hashlib.sha1(); h.update(arr.tobytes()); return h.hexdigest()
+
+    np.savez_compressed(
+        path,
+        grid=env.grid.astype(np.uint8),
+        goal=np.array(env.goal, dtype=np.int16),
+        start_train=np.array(env.start, dtype=np.int16),
+        Q=agent.Q.astype(np.float32),
+        action_table=env._action_lookup.astype(np.int8),
+        num_angles=np.int16(env.num_angles),
+        num_actions=np.int16(env.num_actions),
+        allow_only_forward=np.uint8(env.allow_only_forward),
+        allow_diagonal_obstacle=np.uint8(env.allow_diag_obstacle),
+        # store strings as fixed-length unicode (safe with allow_pickle=False)
+        grid_sha1=np.array([_sha1(env.grid)], dtype="U64"),
+        note=np.array([note], dtype="U512"),
+        train_metrics=(train_metrics.astype(np.float32) if train_metrics is not None else np.zeros((0,13), np.float32)),
+    )
+
 # ---------------------------------------------------------------------
 # MAIN
 # ---------------------------------------------------------------------
@@ -579,16 +715,15 @@ if __name__ == "__main__":
     print("Obstacle map loaded successfully.")
     obstacle_map[:] = obstacle_map[::-1, :]
 
-    # obstacle_map = obstacle_map.T
-    print(obstacle_map)
     use_reward_shaping = True
 
     min_dist_nearby_obstacle = 3
-    safety_nearby_obstacle_gain = 1
-    energy_consumption_gain = 0.6
+    safety_nearby_obstacle_gain = 0
+    energy_consumption_gain = 0
     reward_step = -0.1
 
     allow_diagonal_obstacle = False
+    only_forward = False
 
     env = GridWorld(
         width=width,
@@ -598,6 +733,7 @@ if __name__ == "__main__":
         grid_map=obstacle_map,
         seed=30,
         allow_diagonal_obstacle=allow_diagonal_obstacle,
+        allow_only_forward=only_forward,
         shaping="euclidean",
         reward_step=-0.001,
         safety_nearby_obstacle_gain=safety_nearby_obstacle_gain,
@@ -608,21 +744,44 @@ if __name__ == "__main__":
     
     print(f"{env.grid}\n")
 
+    max_epsilon_band = 0.7
+    min_epsilon_band = 0.1
+    max_epsilon = 0.9
+    min_epsilon = 0.05
     agent = QLearningAgent(
         env,
         alpha=0.1,
         gamma=0.99,
-        epsilon=1.0,
-        min_epsilon=0.05,
-        epsilon_decay=0.9,
-        schedule="mix",
+        min_epsilon=min_epsilon,
+        max_epsilon=max_epsilon,
+        max_epsilon_band=max_epsilon_band,
+        min_epsilon_band=min_epsilon_band,
     )
     
-    episodes = 1000
+    episodes = 2500
 
-    change_start_percentage = 0
-    durations = train(env, agent, episodes=episodes, print_every=int(episodes/100), change_start_percentage=change_start_percentage)
+    change_start_percentage = 0.7
+    max_steps = env.height * env.width * 2
+    inc_step = 0.01
+    
+    # durations = train(env, agent, episodes=episodes, print_every=int(episodes/100), change_start_percentage=change_start_percentage, max_steps=max_steps)
+
+    durations, save_epsilon, matrix_mat = train_adaptative(env, agent, success_window=200, change_start_percentage=change_start_percentage, max_steps=max_steps, inc_step=inc_step)
+    # save_epsilon = np.array(save_epsilon)
+    # Save epsilon to a file
+    # np.save("epsilon_decay.npy", save_epsilon)
+
+    # plot the epsilons
+    # plt.figure(figsize=(10, 5))
+    # plt.plot(save_epsilon, label="Epsilon", color="blue")
+    # plt.xlabel("Episode")
+    # plt.ylabel("Epsilon")
+    # plt.title("Epsilon Decay Over Episodes")
+    # plt.grid()
+    # plt.legend()
+    # plt.show()
 
     path = greedy_path(env, agent)
     # print(path)
     combined_vis(env, agent, path)
+    save_artifacts("agent.npz", env, agent, note="Q+actions with map/goal/start", train_metrics=matrix_mat)
