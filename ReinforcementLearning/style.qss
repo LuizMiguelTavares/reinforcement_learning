@@ -1,0 +1,209 @@
+/* style.qss - Stylesheet for the Application */
+
+/* General Window and Widget Style */
+QWidget {
+    background-color: #fdfdfe; /* A slightly off-white color */
+    color: #2c3e50; /* Dark and soft text color */
+    font-family: "Segoe UI", "Roboto", "Helvetica Neue", "Arial", sans-serif;
+}
+
+/* Style for Title Labels */
+QLabel#titleLabel {
+    font-size: 32px;
+    font-weight: bold;
+    color: #34495e; /* A dark grayish-blue */
+    padding-bottom: 10px;
+}
+
+/* --- Button Styles --- */
+
+/* Base style for all buttons, for consistency */
+QPushButton {
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 12px 24px;
+    font-size: 16px;
+    font-weight: bold;
+    min-width: 150px;
+}
+
+QPushButton:hover {
+    border: 1px solid #bdc3c7;
+}
+
+/* Style for Navigation Buttons (class "navigation") */
+QPushButton[class="navigation"] {
+    background-color: #3498db;
+    color: white;
+}
+QPushButton[class="navigation"]:hover {
+    background-color: #2980b9;
+    border-color: #2980b9;
+}
+
+/* Style for the Grid confirmation button */
+QPushButton#confirmButton {
+    background-color: #2ecc71;
+    color: white;
+}
+QPushButton#confirmButton:hover {
+    background-color: #27ae60;
+    border-color: #27ae60;
+}
+
+/* Style for the close button */
+QPushButton#closeButton {
+    background-color: #e74c3c;
+    color: white;
+}
+QPushButton#closeButton:hover {
+    background-color: #c0392b;
+    border-color: #c0392b;
+}
+
+/* --- Styles for Form Widgets --- */
+
+QFormLayout > QLabel {
+    font-size: 16px;
+    font-weight: bold;
+    color: #2c3e50;
+    padding-top: 5px;
+}
+
+QComboBox {
+    padding: 8px;
+    border: 1px solid #bdc3c7;
+    border-radius: 8px;
+    font-size: 15px;
+    background-color: white;
+    min-width: 100px;
+}
+QComboBox:hover {
+    border-color: #3498db;
+}
+QComboBox QAbstractItemView {
+    border: 1px solid #bdc3c7;
+    background-color: white;
+    selection-background-color: #3498db;
+}
+
+QSpinBox {
+    padding: 8px;
+    border: 1px solid #bdc3c7;
+    border-radius: 8px;
+    font-size: 15px;
+    background-color: white;
+    min-width: 100px;
+}
+QSpinBox:hover {
+    border-color: #3498db;
+}
+
+/* --- Styles for Compass Widget --- */
+
+QLabel#compassTitle {
+    font-size: 16px;
+    font-weight: bold;
+    color: #34495e;
+    margin-bottom: 10px;
+}
+
+QLabel#compassValue {
+    font-size: 20px;
+    font-weight: bold;
+    color: #2c3e50;
+}
+
+QPushButton#compassButton {
+    font-size: 24px;
+    font-weight: bold;
+    min-width: 40px;
+    max-width: 40px;
+    min-height: 40px;
+    max-height: 40px;
+    padding: 0;
+    border-radius: 20px; /* Make it circular */
+    border: 2px solid #bdc3c7;
+    background-color: white;
+}
+
+QPushButton#compassButton:hover {
+    background-color: #ecf0f1;
+    border-color: #3498db;
+}
+
+QPushButton#compassButton:checked {
+    background-color: #3498db;
+    color: white;
+    border-color: #2980b9;
+}
+
+/* --- Estilos para Seleção de Agente --- */
+
+QPushButton[class="agentButton"] {
+    background-color: white;
+    color: #2c3e50;
+    border: 2px solid #bdc3c7;
+}
+
+QPushButton[class="agentButton"]:hover {
+    border-color: #3498db;
+    background-color: #ecf0f1;
+}
+
+QPushButton[class="agentButton"]:checked {
+    background-color: #3498db;
+    color: white;
+    border-color: #2980b9;
+}
+
+/* --- NOVO ESTILO PARA O BOTÃO DE TOGGLE --- */
+QPushButton[class="toggleButton"] {
+    background-color: white;
+    color: #2c3e50;
+    border: 2px solid #bdc3c7;
+}
+
+QPushButton[class="toggleButton"]:hover {
+    border-color: #3498db;
+    background-color: #ecf0f1;
+}
+
+QPushButton[class="toggleButton"]:checked {
+    background-color: #3498db;
+    color: white;
+    border-color: #2980b9;
+}
+
+
+/* --- NOVOS ESTILOS PARA OS SLIDERS --- */
+QWidget#slidersContainer {
+    max-width: 600px;
+}
+
+QLabel#sliderValueLabel {
+    font-size: 16px;
+    font-weight: bold;
+    color: #3498db;
+}
+
+QSlider::groove:horizontal {
+    border: 1px solid #bdc3c7;
+    background: #ecf0f1;
+    height: 8px;
+    border-radius: 4px;
+}
+
+QSlider::handle:horizontal {
+    background: #3498db;
+    border: 1px solid #3498db;
+    width: 18px;
+    height: 18px;
+    margin: -5px 0; /* handle is placed vertically centered */
+    border-radius: 9px;
+}
+
+QSlider::handle:horizontal:hover {
+    background: #2980b9;
+    border-color: #2980b9;
+}
