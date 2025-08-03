@@ -59,8 +59,6 @@ class GridWorld:
         self.backward_penalty = backward_penalty
         self.allow_only_forward = allow_only_forward
 
-        self.angle = -1
-
         # Build grid --------------------------------------------------
         if grid_map is not None:
             self.grid = grid_map.copy()
@@ -186,7 +184,7 @@ class GridWorld:
             return False
         return self.grid[r, c] == 1
 
-    def step(self, action: int) -> Tuple[Tuple[int, int], float, bool]:
+    def step(self, action: int) -> Tuple[Tuple[int, int, int], float, bool]:
         r, c, ang_idx = self.agent_pos
         dr, dc, new_idx = self.action(ang_idx, action)
         nr, nc = r + dr, c + dc
@@ -387,21 +385,6 @@ def train(
           f"({total_time/episodes:.3f} s/episode on average).")
 
     return list(ep_durations)
-
-# def greedy_path(env: GridWorld, agent: QLearningAgent, limit: int = 1000):
-#     backup = agent.epsilon
-#     agent.epsilon = 0.0
-#     s, path = env.reset(), [env.start]
-#     for _ in range(limit):
-#         if s == env.goal:
-#             break
-#         a = agent.choose_action(s)
-#         s, _, done = env.step(a)
-#         path.append(s)
-#         if done:
-#             break
-#     agent.epsilon = backup
-#     return path
 
 def greedy_path(env: GridWorld, agent: QLearningAgent, limit: int = 1000, pos=None):
     backup = agent.epsilon
