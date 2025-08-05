@@ -1,23 +1,23 @@
-/* style.qss - Stylesheet for the Application */
+/* style.qss - Folha de Estilos para a Aplicação */
 
-/* General Window and Widget Style */
+/* Estilo Geral da Janela e Widget */
 QWidget {
-    background-color: #fdfdfe; /* A slightly off-white color */
-    color: #2c3e50; /* Dark and soft text color */
+    background-color: #fdfdfe; /* Uma cor ligeiramente esbranquiçada */
+    color: #2c3e50; /* Cor de texto escura e suave */
     font-family: "Segoe UI", "Roboto", "Helvetica Neue", "Arial", sans-serif;
 }
 
-/* Style for Title Labels */
+/* Estilo para Rótulos de Título */
 QLabel#titleLabel {
     font-size: 32px;
     font-weight: bold;
-    color: #34495e; /* A dark grayish-blue */
+    color: #34495e; /* Um azul acinzentado escuro */
     padding-bottom: 10px;
 }
 
-/* --- Button Styles --- */
+/* --- Estilos de Botão --- */
 
-/* Base style for all buttons, for consistency */
+/* Estilo base para todos os botões, para consistência */
 QPushButton {
     border: 1px solid transparent;
     border-radius: 8px;
@@ -31,7 +31,7 @@ QPushButton:hover {
     border: 1px solid #bdc3c7;
 }
 
-/* Style for Navigation Buttons (class "navigation") */
+/* Estilo para Botões de Navegação (classe "navigation") */
 QPushButton[class="navigation"] {
     background-color: #3498db;
     color: white;
@@ -41,7 +41,7 @@ QPushButton[class="navigation"]:hover {
     border-color: #2980b9;
 }
 
-/* Style for the Grid confirmation button */
+/* Estilo para o botão de confirmação do Grid */
 QPushButton#confirmButton {
     background-color: #2ecc71;
     color: white;
@@ -51,7 +51,7 @@ QPushButton#confirmButton:hover {
     border-color: #27ae60;
 }
 
-/* Style for the close button */
+/* Estilo para o botão de fechar */
 QPushButton#closeButton {
     background-color: #e74c3c;
     color: white;
@@ -61,7 +61,7 @@ QPushButton#closeButton:hover {
     border-color: #c0392b;
 }
 
-/* --- Styles for Form Widgets --- */
+/* --- Estilos para Widgets de Formulário --- */
 
 QFormLayout > QLabel {
     font-size: 16px;
@@ -99,7 +99,7 @@ QSpinBox:hover {
     border-color: #3498db;
 }
 
-/* --- Styles for Compass Widget --- */
+/* --- Estilos para o Widget da Bússola --- */
 
 QLabel#compassTitle {
     font-size: 16px;
@@ -122,7 +122,7 @@ QPushButton#compassButton {
     min-height: 40px;
     max-height: 40px;
     padding: 0;
-    border-radius: 20px; /* Make it circular */
+    border-radius: 20px; /* Torna-o circular */
     border: 2px solid #bdc3c7;
     background-color: white;
 }
@@ -199,7 +199,7 @@ QSlider::handle:horizontal {
     border: 1px solid #3498db;
     width: 18px;
     height: 18px;
-    margin: -5px 0; /* handle is placed vertically centered */
+    margin: -5px 0; /* a alça é colocada verticalmente centrada */
     border-radius: 9px;
 }
 
