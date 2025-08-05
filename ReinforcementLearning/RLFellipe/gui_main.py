@@ -85,12 +85,7 @@ class TrainingWorker(QObject):
             start=(self.data.start[1], self.data.start[0],
                    start_angle),  # (row, col)
             goal=(self.data.goal[1], self.data.goal[0],
-                  goal_angle),  # (row, col)
-            reward_step=-(self.data.param1 / 500.0),
-            safety_nearby_obstacle_gain=(self.data.param2 / 10.0),
-            energy_consumption_gain=(self.data.param3 / 50.0),
-            use_reward_shaping=(self.data.param4 > 50),
-            allow_only_forward=(self.data.agent_type != "Differential"),
+                  goal_angle),  # (row, col),
         )
         agent = QLearningAgent(env, alpha=0.1, gamma=0.99,
                                min_epsilon=0.05, max_epsilon=0.9)
@@ -490,12 +485,19 @@ class GridGenerator(QWidget):
         self.ax.clear()
         self.im = self.ax.imshow(self.display_map, cmap=self.cmap,
                                  norm=self.norm, interpolation="nearest", origin='lower')
+
+        # --- CORRECTION: Draw grid lines correctly ---
         self.ax.set_xticks(np.arange(-0.5, self.nx, 1), minor=True)
         self.ax.set_yticks(np.arange(-0.5, self.ny, 1), minor=True)
-        self.ax.grid(which="minor", color="black", linestyle="-", linewidth=1)
+        self.ax.grid(which="minor", color="black",
+                     linestyle="-", linewidth=0.5)
         self.ax.tick_params(which="minor", size=0)
-        self.ax.set_xticks([])
-        self.ax.set_yticks([])
+        # Hide major tick labels
+        self.ax.tick_params(axis='x', which='major',
+                            bottom=False, top=False, labelbottom=False)
+        self.ax.tick_params(axis='y', which='major',
+                            left=False, right=False, labelleft=False)
+
         self.ax.set_xlim(-0.5, self.nx - 0.5)
         self.ax.set_ylim(-0.5, self.ny - 0.5)
         self.ax.set_title(
@@ -695,6 +697,7 @@ class InteractiveResultsPage(QWidget):
     def __init__(self, main_window: QMainWindow):
         super().__init__(main_window)
         self.main_window = main_window
+        self.selected_start_pos = None
 
         # Main Layout
         main_layout = QVBoxLayout(self)
@@ -715,17 +718,16 @@ class InteractiveResultsPage(QWidget):
         controls_layout = QVBoxLayout(controls_container)
         content_layout.addWidget(controls_container)
 
-        form_layout = QFormLayout()
-        self.spinbox_start_x = QSpinBox()
-        self.spinbox_start_y = QSpinBox()
-        form_layout.addRow("Start X:", self.spinbox_start_x)
-        form_layout.addRow("Start Y:", self.spinbox_start_y)
+        self.instruction_label = QLabel(
+            "Click on the grid to select a start point.")
+        self.instruction_label.setWordWrap(True)
 
-        self.start_compass = CompassWidget("Start Orientation")
+        self.start_compass = CompassWidget("Select Start Orientation")
+
         self.visualize_button = QPushButton("Visualize Path")
         self.visualize_button.setProperty("class", "navigation")
 
-        controls_layout.addLayout(form_layout)
+        controls_layout.addWidget(self.instruction_label)
         controls_layout.addWidget(self.start_compass)
         controls_layout.addStretch()
         controls_layout.addWidget(self.visualize_button)
@@ -737,7 +739,7 @@ class InteractiveResultsPage(QWidget):
         self.ax = self.fig.add_subplot(111)
         self.canvas.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        content_layout.addWidget(self.canvas)
+        content_layout.addWidget(self.canvas, 1)
 
         # Bottom Finish Button
         self.button_finish = QPushButton("Finish Visualization")
@@ -748,23 +750,21 @@ class InteractiveResultsPage(QWidget):
         # Connect signals
         self.visualize_button.clicked.connect(
             self.plot_greedy_path_from_selection)
+        self.canvas.mpl_connect('button_press_event', self.on_canvas_click)
 
     def showEvent(self, event):
         super().showEvent(event)
         self.setup_page()
-        self.draw_base_grid()
 
     def setup_page(self):
         env = self.main_window.trained_env
         if not env:
             return
-
-        self.spinbox_start_x.setRange(0, env.width - 1)
-        self.spinbox_start_y.setRange(0, env.height - 1)
-
-        self.spinbox_start_x.setValue(env.start[1])
-        self.spinbox_start_y.setValue(env.start[0])
+        self.selected_start_pos = (
+            env.start[0], env.start[1])  # Default to env start
         self.start_compass.set_orientation(env.start[2])
+        self.draw_base_grid()
+        self.draw_path_from_point(self.selected_start_pos, env.start[2])
 
     def draw_base_grid(self):
         self.ax.clear()
@@ -779,34 +779,74 @@ class InteractiveResultsPage(QWidget):
         bg = np.ones((H, W, 3))
         bg[env.grid == 1] = (0, 0, 0)
         self.ax.imshow(bg, origin="lower", interpolation="nearest")
+
+        # --- CORRECTION: Draw grid lines correctly ---
+        self.ax.set_xticks(np.arange(-0.5, W, 1), minor=True)
+        self.ax.set_yticks(np.arange(-0.5, H, 1), minor=True)
+        self.ax.grid(which="minor", color="black",
+                     linestyle="-", linewidth=0.5)
+        self.ax.tick_params(which="minor", size=0)
+        self.ax.tick_params(axis='x', which='major',
+                            bottom=False, top=False, labelbottom=False)
+        self.ax.tick_params(axis='y', which='major',
+                            left=False, right=False, labelleft=False)
+
         self.ax.set_xlim([-0.5, W - 0.5])
         self.ax.set_ylim([-0.5, H - 0.5])
-        self.ax.set_xticks(range(W))
-        self.ax.set_yticks(range(H))
-        self.ax.set_xlabel("x (cols)")
-        self.ax.set_ylabel("y (rows)")
-        self.ax.set_title("Select a starting point and visualize the path")
-
+        self.ax.set_title("Click a cell to select a start, then visualize")
         self.ax.scatter(env.goal[1], env.goal[0], marker="*",
                         c="red", s=150, zorder=5, label="Goal")
-        self.ax.legend(loc="upper right")
+        self.canvas.draw()
+
+    def on_canvas_click(self, event):
+        if not event.inaxes:
+            return
+
+        env = self.main_window.trained_env
+        if not env:
+            return
+
+        # Convert click coordinates to cell indices
+        c, r = int(round(event.xdata)), int(round(event.ydata))
+
+        # Check if click is within bounds
+        if not (0 <= r < env.height and 0 <= c < env.width):
+            return
+
+        # Check if the cell is an obstacle
+        if env.grid[r, c] == 1:
+            QMessageBox.warning(self, "Invalid Start",
+                                "The selected cell is an obstacle.")
+            return
+
+        self.selected_start_pos = (r, c)
+        self.instruction_label.setText(
+            f"Start point selected at (Y={r}, X={c}).")
+
+        # Redraw grid and show a temporary marker for the selected start
+        self.draw_base_grid()
+        self.ax.scatter(c, r, marker="o", c="lime", s=120,
+                        zorder=5, label="Selected Start")
         self.canvas.draw()
 
     def plot_greedy_path_from_selection(self):
+        if self.selected_start_pos is None:
+            QMessageBox.warning(
+                self, "No Start Point", "Please click on the grid to select a starting point first.")
+            return
+
+        start_k = self.start_compass.current_orientation
+        self.draw_path_from_point(self.selected_start_pos, start_k)
+
+    def draw_path_from_point(self, start_pos, start_orientation):
         env = self.main_window.trained_env
         agent = self.main_window.trained_agent
         if not env or not agent:
             QMessageBox.critical(self, "Error", "Training data not found.")
             return
 
-        start_c = self.spinbox_start_x.value()
-        start_r = self.spinbox_start_y.value()
-        start_k = self.start_compass.current_orientation
-
-        if env.grid[start_r, start_c] == 1:
-            QMessageBox.warning(
-                self, "Invalid Start", "The selected starting position is on an obstacle.")
-            return
+        start_r, start_c = start_pos
+        start_k = start_orientation
 
         self.draw_base_grid()
 
@@ -849,8 +889,7 @@ class InteractiveResultsPage(QWidget):
                            scale=1, width=0.012, color='yellow', zorder=6)
 
         self.ax.set_title(
-            f"Greedy path from ({start_r},{start_c},{start_k}) | Steps: {len(path)-1}")
-        self.ax.legend(loc="upper right")
+            f"Greedy path from (Y={start_r}, X={start_c}, θ={start_k}) | Steps: {len(path)-1}")
         self.canvas.draw()
 
 
