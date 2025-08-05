@@ -86,7 +86,9 @@ class TrainingWorker(QObject):
                    start_angle),  # (row, col)
             goal=(self.data.goal[1], self.data.goal[0],
                   goal_angle),  # (row, col),
-            final_orientation_irrelevant=self.data.goal_orientation_irrelevant
+            final_orientation_irrelevant=self.data.goal_orientation_irrelevant,
+            agent_type=self.data.agent_type,
+            allow_only_forward=False
         )
         agent = QLearningAgent(env, alpha=0.1, gamma=0.99,
                                min_epsilon=0.05, max_epsilon=0.9)
@@ -879,6 +881,7 @@ class InteractiveResultsPage(QWidget):
         for i in range(limit):
             a = agent.choose_action(s)
             s, _, done = env.step(a)
+            print(f'epsilon: {agent.epsilon}')
             path.append(s)
             if done:
                 break

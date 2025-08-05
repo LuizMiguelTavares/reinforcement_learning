@@ -38,6 +38,8 @@ class GridWorld:
         safety_nearby_obstacle_gain: float = 0.0,
         energy_consumption_gain: float = 0.0,
         final_orientation_irrelevant: bool = False,
+        # 'Differential' | 'Omnidirectional' | 'Car Like'
+        agent_type: str = "Differential",
     ):
         self.num_angles = 8
 
@@ -90,20 +92,19 @@ class GridWorld:
         self.angle = -1  # Angle initialization
         self.final_orientation_irrelevant = final_orientation_irrelevant
 
+        self.robot = agent_type
+
         if self.safety_nearby_obstacle:
             self.precompute_nearby_obstacles_reward()
 
-        if self.allow_only_forward:
-            self.num_actions = 3
-        else:
-            self.num_actions = 4
+        self.num_actions = len(self.options(0.0))
 
         # Precompute action lookup table -----------------------------
         self._action_lookup = np.empty(
             (self.num_angles, self.num_actions, 3), dtype=int)
         for ang_idx in range(self.num_angles):
             for a in range(self.num_actions):
-                self._action_lookup[ang_idx, a] = self._raw_action(ang_idx, a)
+                self._action_lookup[ang_idx, a] = self.options(ang_idx, a)
 
         self.agent_pos: Optional[Tuple[int, int, float]] = None
 
@@ -158,27 +159,99 @@ class GridWorld:
         step = 2 * math.pi / self.num_angles
         return idx * step
 
-    def _raw_action(self, ang_idx: int, action: int):
+    def options(self, ang_idx, action=None) -> list:
         ang = self.idx_to_angle(ang_idx)
 
         def rint(x):
             return int(np.round(x))
 
-        options = []
+        if self.robot == "Differential":
+            if self.allow_only_forward:
+                options = [
+                    (rint(math.sin(ang)),  rint(math.cos(ang)),   0),
+                    (0, 0, +1),
+                    (0, 0, -1),]
+            else:
+                options = [
+                    (rint(math.sin(ang)),  rint(math.cos(ang)),   0),
+                    (-rint(math.sin(ang)),  -rint(math.cos(ang)),   0),
+                    (0, 0, +1),
+                    (0, 0, -1),]
 
-        if self.allow_only_forward:
-            options = [
-                (rint(math.sin(ang)),  rint(math.cos(ang)),   0),
-                (0, 0, +1),
-                (0, 0, -1),]
+        elif self.robot == "Omnidirectional":
+            if self.allow_only_forward:
+                # Only forwrd not implemented for omnidirectional
+                options = [
+                    (1, 0, 0),  # Forward
+                    (-1, 0, 0),  # Backward
+                    (0, 1, 0),  # Right
+                    (0, -1, 0),  # Left
+                    (1, 1, 0),  # Forward Right
+                    (-1, -1, 0),  # Backward Left
+                    (1, -1, 0),  # Forward Left
+                    (-1, 1, 0),  # Backward Right
+
+                    (0, 0, +1),
+                    (0, 0, -1),]
+            else:
+                options = [
+                    (1, 0, 0),  # Forward
+                    (-1, 0, 0),  # Backward
+                    (0, 1, 0),  # Right
+                    (0, -1, 0),  # Left
+                    (1, 1, 0),  # Forward Right
+                    (-1, -1, 0),  # Backward Left
+                    (1, -1, 0),  # Forward Left
+                    (-1, 1, 0),  # Backward Right
+
+                    (0, 0, +1),
+                    (0, 0, -1),]
+
+        elif self.robot == "Car Like":
+
+            if self.allow_only_forward:
+                options = [
+                    (rint(math.sin(ang + math.pi/4)),
+                        rint(math.cos(ang + math.pi/4)),   +1),
+                    (rint(math.sin(ang)),              rint(
+                        math.cos(ang)),               +1),
+                    (rint(math.sin(ang)),              rint(
+                        math.cos(ang)),                0),
+                    (rint(math.sin(ang)),              rint(
+                        math.cos(ang)),               -1),
+                    (rint(math.sin(ang - math.pi/4)),  rint(math.cos(ang - math.pi/4)),   -1),]
+            else:
+                options = [
+                    (rint(math.sin(ang + math.pi/4)),
+                        rint(math.cos(ang + math.pi/4)),   +1),
+                    (rint(math.sin(ang)),              rint(
+                        math.cos(ang)),               +1),
+                    (rint(math.sin(ang)),              rint(
+                        math.cos(ang)),                0),
+                    (rint(math.sin(ang)),              rint(
+                        math.cos(ang)),               -1),
+                    (rint(math.sin(ang - math.pi/4)),
+                        rint(math.cos(ang - math.pi/4)),   -1),
+                    (-rint(math.sin(ang + math.pi/4)), -
+                        rint(math.cos(ang + math.pi/4)),  +1),
+                    (-rint(math.sin(ang)),             -
+                        rint(math.cos(ang)),              +1),
+                    (-rint(math.sin(ang)),             -
+                        rint(math.cos(ang)),               0),
+                    (-rint(math.sin(ang)),             -
+                        rint(math.cos(ang)),              -1),
+                    (-rint(math.sin(ang - math.pi/4)), -rint(math.cos(ang - math.pi/4)),  -1),]
+
+        if action is None:
+            return options
         else:
-            options = [
-                (rint(math.sin(ang)),  rint(math.cos(ang)),   0),
-                (-rint(math.sin(ang)),  -rint(math.cos(ang)),   0),
-                (0, 0, +1),
-                (0, 0, -1),]
+            dr, dc, d_idx = options[action]
+            new_idx = (ang_idx + d_idx) % self.num_angles
+            return dr, dc, new_idx
 
-        dr, dc, d_idx = options[action]
+    def _raw_action(self, ang_idx: int, action: int):
+
+        dr, dc, d_idx = self.optionsaction
         new_idx = (ang_idx + d_idx) % self.num_angles
         return dr, dc, new_idx
 
