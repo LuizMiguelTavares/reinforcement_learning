@@ -146,7 +146,7 @@ QLabel#statusLabel[class="success"] {
 
 QLabel#statusLabel[class="error"] {
     color: #c0392b;
-    background-color: #fbeee;
+    background-color: #ebab35;
     border: 1px solid #f5b7b1;
 }
 

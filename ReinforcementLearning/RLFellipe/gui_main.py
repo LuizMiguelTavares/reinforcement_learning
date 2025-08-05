@@ -86,6 +86,7 @@ class TrainingWorker(QObject):
                    start_angle),  # (row, col)
             goal=(self.data.goal[1], self.data.goal[0],
                   goal_angle),  # (row, col),
+            final_orientation_irrelevant=self.data.goal_orientation_irrelevant
         )
         agent = QLearningAgent(env, alpha=0.1, gamma=0.99,
                                min_epsilon=0.05, max_epsilon=0.9)
@@ -875,13 +876,15 @@ class InteractiveResultsPage(QWidget):
         s = env.agent_pos
         path = [s]
         limit = env.width * env.height * 2
-        for _ in range(limit):
-            if s[0:2] == env.goal[0:2]:
-                break
+        for i in range(limit):
             a = agent.choose_action(s)
             s, _, done = env.step(a)
             path.append(s)
             if done:
+                break
+            if i == limit - 1:
+                QMessageBox.warning(self, "Path Limit Reached",
+                                    "The path limit was reached without finding a solution.")
                 break
 
         agent.epsilon = eps_bak

@@ -37,6 +37,7 @@ class GridWorld:
         min_dist_nearby_obstacle: int = 3,
         safety_nearby_obstacle_gain: float = 0.0,
         energy_consumption_gain: float = 0.0,
+        final_orientation_irrelevant: bool = False,
     ):
         self.num_angles = 8
 
@@ -87,6 +88,7 @@ class GridWorld:
         self.allow_only_forward = allow_only_forward
 
         self.angle = -1  # Angle initialization
+        self.final_orientation_irrelevant = final_orientation_irrelevant
 
         if self.safety_nearby_obstacle:
             self.precompute_nearby_obstacles_reward()
@@ -150,11 +152,11 @@ class GridWorld:
 
     def angle_to_idx(self, ang: float) -> int:
         step = 2 * math.pi / self.num_angles
-        return int(((ang + math.pi) % (2 * math.pi)) // step)
+        return int(((ang) % (2 * math.pi)) // step)
 
     def idx_to_angle(self, idx: int) -> float:
         step = 2 * math.pi / self.num_angles
-        return -math.pi + idx * step
+        return idx * step
 
     def _raw_action(self, ang_idx: int, action: int):
         ang = self.idx_to_angle(ang_idx)
@@ -214,8 +216,13 @@ class GridWorld:
 
         # initialize reward/done before adding step/shaping
         reward, done = 0.0, False
-        if next_state[0:2] == self.goal[0:2]:  # Check only position for goal
+
+        pos_done = next_state[0:2] == self.goal[0:2]
+        orientation_done = self.final_orientation_irrelevant or next_state[2] == self.goal[2]
+
+        if pos_done and orientation_done:
             reward, done = self.reward_goal, True
+            return next_state, reward, done
 
         # step penalty
         reward += self.reward_step
