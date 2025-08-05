@@ -881,7 +881,6 @@ class InteractiveResultsPage(QWidget):
         for i in range(limit):
             a = agent.choose_action(s)
             s, _, done = env.step(a)
-            print(f'epsilon: {agent.epsilon}')
             path.append(s)
             if done:
                 break

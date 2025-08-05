@@ -377,7 +377,8 @@ class QLearningAgent:
             return np.random.randint(self.env.num_actions)
         r, c, ang_idx = state
         q = self.Q[r, c, ang_idx]
-        return int(np.random.choice(np.flatnonzero(q == q.max())))
+        best_actions = np.flatnonzero(q == q.max())
+        return int(np.random.choice(best_actions))
 
     def choose_action_bias(self, state, force_move=False) -> int:
         move_idxs = [0] if self.env.allow_only_forward else [0, 1]
