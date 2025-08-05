@@ -19,46 +19,62 @@ QLabel#titleLabel {
 
 /* Base style for all buttons, for consistency */
 QPushButton {
-    border: 1px solid transparent;
+    border: 1px solid #d1d5da;
     border-radius: 8px;
     padding: 12px 24px;
     font-size: 16px;
     font-weight: bold;
     min-width: 150px;
+    background-color: #fafbfc;
 }
 
 QPushButton:hover {
-    border: 1px solid #bdc3c7;
+    background-color: #f3f4f6;
+    border-color: #aeb5bc;
+}
+
+QPushButton:pressed {
+    background-color: #e8eaed;
+    border-color: #aeb5bc;
 }
 
 /* Style for Navigation Buttons (class "navigation") */
 QPushButton[class="navigation"] {
     background-color: #3498db;
     color: white;
+    border-color: #2980b9;
 }
 QPushButton[class="navigation"]:hover {
     background-color: #2980b9;
-    border-color: #2980b9;
+}
+QPushButton[class="navigation"]:pressed {
+    background-color: #2471a3;
 }
 
 /* Style for the Grid confirmation button */
 QPushButton#confirmButton {
     background-color: #2ecc71;
     color: white;
+    border-color: #27ae60;
 }
 QPushButton#confirmButton:hover {
     background-color: #27ae60;
-    border-color: #27ae60;
+}
+QPushButton#confirmButton:pressed {
+    background-color: #229954;
 }
 
 /* Style for the close button */
 QPushButton#closeButton {
     background-color: #e74c3c;
     color: white;
+    border-color: #c0392b;
 }
 QPushButton#closeButton:hover {
     background-color: #c0392b;
-    border-color: #c0392b;
+}
+QPushButton#closeButton:pressed {
+    background-color: #a93226;
 }
 
 /* --- Styles for Form Widgets --- */
@@ -70,7 +86,7 @@ QFormLayout > QLabel {
     padding-top: 5px;
 }
 
-QComboBox {
+QComboBox, QSpinBox {
     padding: 8px;
     border: 1px solid #bdc3c7;
     border-radius: 8px;
@@ -78,7 +94,7 @@ QComboBox {
     background-color: white;
     min-width: 100px;
 }
-QComboBox:hover {
+QComboBox:hover, QSpinBox:hover {
     border-color: #3498db;
 }
 QComboBox QAbstractItemView {
@@ -87,16 +103,51 @@ QComboBox QAbstractItemView {
     selection-background-color: #3498db;
 }
 
-QSpinBox {
-    padding: 8px;
-    border: 1px solid #bdc3c7;
-    border-radius: 8px;
-    font-size: 15px;
-    background-color: white;
-    min-width: 100px;
+/* --- Container and Frame Styles --- */
+QWidget#controlsContainer {
+    background-color: #f4f6f8;
+    border-radius: 10px;
+    border: 1px solid #e1e4e8;
 }
-QSpinBox:hover {
-    border-color: #3498db;
+
+QWidget#slidersContainer {
+    max-width: 600px;
+}
+
+/* --- Label Styles --- */
+QLabel#instructionLabel {
+    font-size: 15px;
+    color: #586069; /* A softer gray */
+    padding: 10px;
+    text-align: center;
+}
+
+QLabel#trainingStatusLabel {
+    font-size: 20px;
+    font-weight: bold;
+    color: #34495e;
+    padding: 20px;
+}
+
+QLabel#statusLabel {
+    font-size: 14px;
+    font-weight: bold;
+    padding: 8px 12px;
+    border-radius: 5px;
+    min-width: 200px;
+    text-align: center;
+}
+
+QLabel#statusLabel[class="success"] {
+    color: #27ae60;
+    background-color: #eafaf1;
+    border: 1px solid #a3e9a4;
+}
+
+QLabel#statusLabel[class="error"] {
+    color: #c0392b;
+    background-color: #fbeee;
+    border: 1px solid #f5b7b1;
 }
 
 /* --- Styles for Compass Widget --- */
@@ -138,48 +189,26 @@ QPushButton#compassButton:checked {
     border-color: #2980b9;
 }
 
-/* --- Estilos para Seleção de Agente --- */
+/* --- Agent Selection and Toggle Buttons --- */
 
-QPushButton[class="agentButton"] {
+QPushButton[class="agentButton"], QPushButton[class="toggleButton"] {
     background-color: white;
     color: #2c3e50;
     border: 2px solid #bdc3c7;
 }
 
-QPushButton[class="agentButton"]:hover {
+QPushButton[class="agentButton"]:hover, QPushButton[class="toggleButton"]:hover {
     border-color: #3498db;
     background-color: #ecf0f1;
 }
 
-QPushButton[class="agentButton"]:checked {
+QPushButton[class="agentButton"]:checked, QPushButton[class="toggleButton"]:checked {
     background-color: #3498db;
     color: white;
     border-color: #2980b9;
 }
 
-/* --- NOVO ESTILO PARA O BOTÃO DE TOGGLE --- */
-QPushButton[class="toggleButton"] {
-    background-color: white;
-    color: #2c3e50;
-    border: 2px solid #bdc3c7;
-}
-
-QPushButton[class="toggleButton"]:hover {
-    border-color: #3498db;
-    background-color: #ecf0f1;
-}
-
-QPushButton[class="toggleButton"]:checked {
-    background-color: #3498db;
-    color: white;
-    border-color: #2980b9;
-}
-
-
-/* --- NOVOS ESTILOS PARA OS SLIDERS --- */
-QWidget#slidersContainer {
-    max-width: 600px;
-}
+/* --- Slider Styles --- */
 
 QLabel#sliderValueLabel {
     font-size: 16px;

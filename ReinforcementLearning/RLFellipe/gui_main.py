@@ -208,7 +208,7 @@ class MainWindow(QMainWindow):
         self.grid_generator.confirm_button.clicked.connect(
             lambda: self.stacked_widget.setCurrentIndex(4))
         self.training_config_page.button_finish.clicked.connect(
-            lambda: self.stacked_widget.setCurrentIndex(5))
+            self.start_training)
         self.results_page.button_finish.clicked.connect(
             lambda: self.stacked_widget.setCurrentIndex(7))
         self.end_page.button_close.clicked.connect(self.close)
@@ -246,6 +246,10 @@ class MainWindow(QMainWindow):
             self.data.grid_size, self.data.start, self.data.goal)
         self.stacked_widget.setCurrentIndex(3)
 
+    def start_training(self):
+        self.stacked_widget.setCurrentIndex(5)
+        self.training_page.start_worker()
+
     def update_data(self, field_name: str, value: Any):
         if hasattr(self.data, field_name):
             setattr(self.data, field_name, value)
@@ -261,6 +265,7 @@ class MainWindow(QMainWindow):
         self.trained_agent = agent
         self.trained_env = env
         self.training_metrics = metrics
+        self.results_page.setup_page()
         self.stacked_widget.setCurrentIndex(6)
 
 
@@ -297,6 +302,7 @@ class GridSourcePage(QWidget):
         button_import.setProperty("class", "navigation")
         button_import.clicked.connect(self._handle_import)
         self.import_status_label = QLabel("No file imported.")
+        self.import_status_label.setObjectName("statusLabel")
         self.import_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
         layout.addWidget(button_draw)
@@ -322,10 +328,16 @@ class GridSourcePage(QWidget):
             self.main_window.update_data("grid_size", (cols, rows))
             file_name = file_path.split('/')[-1]
             self.import_status_label.setText(f"Imported: {file_name}")
+            self.import_status_label.setProperty("class", "success")
             self.navigation_requested.emit(True)
         except Exception as e:
             self.import_status_label.setText(f"Error: {e}")
+            self.import_status_label.setProperty("class", "error")
             print(f"Failed to import grid: {e}")
+
+        # Re-polish to apply dynamic property changes from QSS
+        self.import_status_label.style().unpolish(self.import_status_label)
+        self.import_status_label.style().polish(self.import_status_label)
 
 
 class GridConfigurationPage(QWidget):
@@ -672,13 +684,14 @@ class TrainingScreen(QWidget):
         layout.setSpacing(30)
         title = QLabel("Training Agent")
         title.setObjectName("titleLabel")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label = QLabel("Preparing to start training...")
+        self.status_label.setObjectName("trainingStatusLabel")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
         layout.addWidget(self.status_label)
 
-    def showEvent(self, event):
-        super().showEvent(event)
+    def start_worker(self):
         self.status_label.setText(
             "Training in progress... Please wait.\nThe interface will remain responsive.")
         self.thread = QThread()
@@ -688,7 +701,7 @@ class TrainingScreen(QWidget):
         self.worker.training_finished.connect(
             self.main_window.on_training_complete)
         self.worker.training_finished.connect(self.thread.quit)
-        self.worker.deleteLater()
+        self.worker.training_finished.connect(self.worker.deleteLater)
         self.thread.finished.connect(self.thread.deleteLater)
         self.thread.start()
 
@@ -712,26 +725,33 @@ class InteractiveResultsPage(QWidget):
         content_layout = QHBoxLayout()
         main_layout.addLayout(content_layout, 1)
 
-        # --- Left Side: Controls ---
+        # --- Left Side: Controls (Reorganized for better centering) ---
         controls_container = QWidget()
-        controls_container.setFixedWidth(300)
+        controls_container.setObjectName("controlsContainer")
+        controls_container.setFixedWidth(350)
         controls_layout = QVBoxLayout(controls_container)
+        controls_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         content_layout.addWidget(controls_container)
 
         self.instruction_label = QLabel(
             "Click on the grid to select a start point.")
+        self.instruction_label.setObjectName("instructionLabel")
         self.instruction_label.setWordWrap(True)
+        self.instruction_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.start_compass = CompassWidget("Select Start Orientation")
 
         self.visualize_button = QPushButton("Visualize Path")
         self.visualize_button.setProperty("class", "navigation")
 
+        # Add widgets to the centered layout
+        controls_layout.addStretch(1)
         controls_layout.addWidget(self.instruction_label)
+        controls_layout.addSpacing(20)
         controls_layout.addWidget(self.start_compass)
-        controls_layout.addStretch()
+        controls_layout.addSpacing(20)
         controls_layout.addWidget(self.visualize_button)
-        controls_layout.addStretch()
+        controls_layout.addStretch(1)
 
         # --- Right Side: Matplotlib Canvas ---
         self.fig = Figure(figsize=(8, 8), tight_layout=True)
@@ -752,10 +772,6 @@ class InteractiveResultsPage(QWidget):
             self.plot_greedy_path_from_selection)
         self.canvas.mpl_connect('button_press_event', self.on_canvas_click)
 
-    def showEvent(self, event):
-        super().showEvent(event)
-        self.setup_page()
-
     def setup_page(self):
         env = self.main_window.trained_env
         if not env:
@@ -763,6 +779,8 @@ class InteractiveResultsPage(QWidget):
         self.selected_start_pos = (
             env.start[0], env.start[1])  # Default to env start
         self.start_compass.set_orientation(env.start[2])
+        self.instruction_label.setText(
+            f"Start point selected at (Y={env.start[0]}, X={env.start[1]}).\nClick grid to change or visualize path.")
         self.draw_base_grid()
         self.draw_path_from_point(self.selected_start_pos, env.start[2])
 
@@ -777,14 +795,14 @@ class InteractiveResultsPage(QWidget):
 
         H, W = env.height, env.width
         bg = np.ones((H, W, 3))
-        bg[env.grid == 1] = (0, 0, 0)
+        bg[env.grid == 1] = (0.2, 0.2, 0.2)  # Darker obstacles
         self.ax.imshow(bg, origin="lower", interpolation="nearest")
 
-        # --- CORRECTION: Draw grid lines correctly ---
+        # Draw grid lines
         self.ax.set_xticks(np.arange(-0.5, W, 1), minor=True)
         self.ax.set_yticks(np.arange(-0.5, H, 1), minor=True)
-        self.ax.grid(which="minor", color="black",
-                     linestyle="-", linewidth=0.5)
+        self.ax.grid(which="minor", color="k",
+                     linestyle="-", linewidth=0.5, alpha=0.2)
         self.ax.tick_params(which="minor", size=0)
         self.ax.tick_params(axis='x', which='major',
                             bottom=False, top=False, labelbottom=False)
@@ -795,7 +813,7 @@ class InteractiveResultsPage(QWidget):
         self.ax.set_ylim([-0.5, H - 0.5])
         self.ax.set_title("Click a cell to select a start, then visualize")
         self.ax.scatter(env.goal[1], env.goal[0], marker="*",
-                        c="red", s=150, zorder=5, label="Goal")
+                        c="#e74c3c", s=250, zorder=5, label="Goal", edgecolors='black')
         self.canvas.draw()
 
     def on_canvas_click(self, event):
@@ -821,12 +839,12 @@ class InteractiveResultsPage(QWidget):
 
         self.selected_start_pos = (r, c)
         self.instruction_label.setText(
-            f"Start point selected at (Y={r}, X={c}).")
+            f"Start point selected at (Y={r}, X={c}).\nAdjust orientation and visualize.")
 
         # Redraw grid and show a temporary marker for the selected start
         self.draw_base_grid()
-        self.ax.scatter(c, r, marker="o", c="lime", s=120,
-                        zorder=5, label="Selected Start")
+        self.ax.scatter(c, r, marker="o", c="#2ecc71", s=150,
+                        zorder=5, label="Selected Start", edgecolors='black')
         self.canvas.draw()
 
     def plot_greedy_path_from_selection(self):
@@ -868,13 +886,13 @@ class InteractiveResultsPage(QWidget):
 
         agent.epsilon = eps_bak
 
-        self.ax.scatter(start_c, start_r, marker="o", c="lime",
-                        s=120, zorder=5, label="Selected Start")
+        self.ax.scatter(start_c, start_r, marker="o", c="#2ecc71",
+                        s=150, zorder=5, label="Selected Start", edgecolors='black')
 
         for (pr, pc, _) in path:
             if env.grid[pr, pc] == 0 and (pr, pc) != (env.goal[0], env.goal[1]):
                 self.ax.add_patch(plt.Rectangle(
-                    (pc - 0.5, pr - 0.5), 1, 1, fill=True, alpha=0.3, color=(0.5, 0.5, 1), zorder=3))
+                    (pc - 0.5, pr - 0.5), 1, 1, fill=True, alpha=0.3, color="#3498db", zorder=3))
 
         xs, ys, us, vs = [], [], [], []
         arrow_scale = 0.35
@@ -886,10 +904,10 @@ class InteractiveResultsPage(QWidget):
             vs.append(math.sin(ang) * arrow_scale)
         if xs:
             self.ax.quiver(xs, ys, us, vs, angles='xy', scale_units='xy',
-                           scale=1, width=0.012, color='yellow', zorder=6)
+                           scale=1, width=0.015, color='yellow', zorder=6)
 
         self.ax.set_title(
-            f"Greedy path from (Y={start_r}, X={start_c}, θ={start_k}) | Steps: {len(path)-1}")
+            f"Greedy path from (Y={start_r}, X={start_c}, θ={start_k}°) | Steps: {len(path)-1}")
         self.canvas.draw()
 
 
