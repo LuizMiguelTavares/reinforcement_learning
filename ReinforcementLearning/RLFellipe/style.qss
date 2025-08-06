@@ -77,6 +77,21 @@ QPushButton#closeButton:pressed {
     background-color: #a93226;
 }
 
+/* --- Style for the new Save Path button --- */
+QPushButton#savePathButton {
+    background-color: #3498db; /* A neutral gray */
+    color: white;
+    border-color: #2980b9;
+    min-width: 200px; /* Adjust width as needed */
+}
+QPushButton#savePathButton:hover {
+    background-color: #2980b9;
+}
+QPushButton#savePathButton:pressed {
+    background-color: #2471a3;
+}
+
+
 /* --- Styles for Form Widgets --- */
 
 QFormLayout > QLabel {
@@ -86,7 +101,8 @@ QFormLayout > QLabel {
     padding-top: 5px;
 }
 
-QComboBox, QSpinBox {
+/* Apply consistent style to all spin boxes */
+QComboBox, QSpinBox, QDoubleSpinBox {
     padding: 8px;
     border: 1px solid #bdc3c7;
     border-radius: 8px;
@@ -94,7 +110,7 @@ QComboBox, QSpinBox {
     background-color: white;
     min-width: 100px;
 }
-QComboBox:hover, QSpinBox:hover {
+QComboBox:hover, QSpinBox:hover, QDoubleSpinBox:hover {
     border-color: #3498db;
 }
 QComboBox QAbstractItemView {
@@ -104,7 +120,7 @@ QComboBox QAbstractItemView {
 }
 
 /* --- Container and Frame Styles --- */
-QWidget#controlsContainer {
+QWidget#controlsContainer, QWidget#exportControlsContainer {
     background-color: #f4f6f8;
     border-radius: 10px;
     border: 1px solid #e1e4e8;

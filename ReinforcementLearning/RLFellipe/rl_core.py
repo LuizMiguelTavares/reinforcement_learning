@@ -311,10 +311,6 @@ class GridWorld:
         # energy/turn penalty
         reward += -self.energy_consumption_gain * abs(turn_angle) / math.pi
 
-        # Not moving penalty
-        # if dr == 0 and dc == 0:
-        #     reward += self.reward_step
-
         return next_state, reward, done
 
     def precompute_nearby_obstacles_reward(self) -> None:
@@ -425,7 +421,7 @@ def train_adaptative(
     t_start = time.perf_counter()
 
     if change_start_percentage > 1:
-        print("Aviso: change_start_percentage deve estar entre 0 e 1. A definir para 0.")
+        print("Warning: change_start_percentage should be between 0 and 1. Setting to 0.")
         change_start_percentage = 0
 
     so = 0
@@ -477,10 +473,7 @@ def train_adaptative(
             s, tot = s2, tot + r
             steps += 1
 
-            # --- A MELHORIA ESTÁ AQUI ---
-            # Força a thread a liberar o GIL (Global Interpreter Lock),
-            # permitindo que outras threads (como a da GUI) executem.
-            # time.sleep(0) é a forma mais eficaz de fazer isso.
+            # Yield control to allow other threads (like the GUI) to run.
             time.sleep(0)
 
         ep_time = time.perf_counter() - ep_begin
@@ -517,7 +510,6 @@ def train_adaptative(
 
             if max_group_success_countdown > success_countdown:
                 agent.epsilon = max(agent.min_eps, agent.epsilon - inc_step)
-                # max_group_success_countdown = 0
 
             row = [
                 ep, float(np.mean(rewards)), float(
@@ -541,13 +533,13 @@ def train_adaptative(
             if agent.epsilon <= agent.min_eps:
                 trained = True
                 print(
-                    f"Treino concluído no episódio {ep} com epsilon {agent.epsilon:.3f}.")
+                    f"Training completed at episode {ep} with epsilon {agent.epsilon:.3f}.")
 
     total_time = time.perf_counter() - t_start
     print(
-        f"\nTreino finalizado em {total_time:.2f} segundos ({total_time/ep:.3f} s/episódio em média).")
+        f"\nTraining finished in {total_time:.2f} seconds ({total_time/ep:.3f} s/episode on average).")
     print(
-        f"Mudanças de início: {(sn/ep)*100:.1f}%, Sem mudanças de início: {so/ep*100:.1f}%")
+        f"Randomized starts: {(sn/ep)*100:.1f}%, Fixed starts: {so/ep*100:.1f}%")
     metrics_mat = np.asarray(metrics_rows, dtype=np.float32)
 
     return list(ep_durations), save_epsilon, metrics_mat

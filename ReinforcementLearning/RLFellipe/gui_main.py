@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QFormLayout,
     QSpinBox,
+    QDoubleSpinBox,
     QGridLayout,
     QSizePolicy,
     QButtonGroup,
@@ -805,10 +806,6 @@ class TrainingScreen(QWidget):
         title.setObjectName("titleLabel")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Create the loading spinner with adjustable speed.
-        # speed: higher is faster.
-        # smoothness_ms: lower is smoother (but uses more CPU).
-        # Example: self.spinner = LoadingSpinner(self, speed=15) for a faster spinner.
         self.spinner = LoadingSpinner(self, speed=4, smoothness_ms=30)
 
         self.status_label = QLabel("Preparing to start training...")
@@ -824,14 +821,13 @@ class TrainingScreen(QWidget):
     def start_worker(self):
         self.status_label.setText(
             "Training in progress... Please wait.")
-        self.spinner.start()  # Start the animation
+        self.spinner.start()
 
         self.thread = QThread()
         self.worker = TrainingWorker(self.main_window.data)
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
 
-        # Connect signals to stop spinner and clean up
         self.worker.training_finished.connect(self.spinner.stop)
         self.worker.training_finished.connect(
             self.main_window.on_training_complete)
@@ -846,6 +842,7 @@ class InteractiveResultsPage(QWidget):
         super().__init__(main_window)
         self.main_window = main_window
         self.selected_start_pos = None
+        self.current_path = None
 
         # Main Layout
         main_layout = QVBoxLayout(self)
@@ -860,7 +857,7 @@ class InteractiveResultsPage(QWidget):
         content_layout = QHBoxLayout()
         main_layout.addLayout(content_layout, 1)
 
-        # --- Left Side: Controls (Reorganized for better centering) ---
+        # --- Left Side: Controls ---
         controls_container = QWidget()
         controls_container.setObjectName("controlsContainer")
         controls_container.setFixedWidth(350)
@@ -879,17 +876,40 @@ class InteractiveResultsPage(QWidget):
         self.visualize_button = QPushButton("Visualize Path")
         self.visualize_button.setProperty("class", "navigation")
 
+        # --- New container for export controls ---
+        export_controls_container = QWidget()
+        export_controls_container.setObjectName("exportControlsContainer")
+        export_layout = QVBoxLayout(export_controls_container)
+        export_layout.setSpacing(15)
+
+        resolution_form = QFormLayout()
+        self.resolution_spinbox = QDoubleSpinBox()
+        self.resolution_spinbox.setRange(0.01, 100.0)
+        self.resolution_spinbox.setValue(1.0)
+        self.resolution_spinbox.setSingleStep(0.1)
+        self.resolution_spinbox.setSuffix(" m")
+        resolution_form.addRow("Resolution (m/cell):", self.resolution_spinbox)
+
+        self.save_path_button = QPushButton("Save Path")
+        self.save_path_button.setObjectName("savePathButton")
+
+        export_layout.addLayout(resolution_form)
+        export_layout.addWidget(self.save_path_button,
+                                alignment=Qt.AlignmentFlag.AlignCenter)
+
         # Colors for legend
         colors = ["#e74c3c", "#2ecc71", "#3498db", "#fffb00"]
         self.cmap = ListedColormap(colors)
 
-        # Add widgets to the centered layout
+        # Add widgets to the main controls layout
         controls_layout.addStretch(1)
         controls_layout.addWidget(self.instruction_label)
         controls_layout.addSpacing(20)
         controls_layout.addWidget(self.start_compass)
         controls_layout.addSpacing(20)
         controls_layout.addWidget(self.visualize_button)
+        controls_layout.addSpacing(20)
+        controls_layout.addWidget(export_controls_container)
         controls_layout.addStretch(1)
 
         # --- Right Side: Matplotlib Canvas ---
@@ -909,17 +929,20 @@ class InteractiveResultsPage(QWidget):
         # Connect signals
         self.visualize_button.clicked.connect(
             self.plot_greedy_path_from_selection)
+        self.save_path_button.clicked.connect(self.save_path_to_file)
         self.canvas.mpl_connect('button_press_event', self.on_canvas_click)
 
     def setup_page(self):
         env = self.main_window.trained_env
         if not env:
-            returnk
+            return
+        self.current_path = None
         self.selected_start_pos = (
-            env.start[0], env.start[1])  # Default to env start
+            env.start[0], env.start[1])
         self.start_compass.set_orientation(env.start[2])
         self.instruction_label.setText(
-            f"Start point selected at (Y={env.start[0]}, X={env.start[1]}).\nClick grid to change or visualize path.")
+            f"Start point selected at (Y={env.start[0]}, X={env.start[1]}).\n"
+            "Click grid to change or visualize path.")
         self.draw_base_grid()
         self.draw_path_from_point(self.selected_start_pos, env.start[2])
 
@@ -934,10 +957,9 @@ class InteractiveResultsPage(QWidget):
 
         H, W = env.height, env.width
         bg = np.ones((H, W, 3))
-        bg[env.grid == 1] = (0.2, 0.2, 0.2)  # Darker obstacles
+        bg[env.grid == 1] = (0.2, 0.2, 0.2)
         self.ax.imshow(bg, origin="lower", interpolation="nearest")
 
-        # Draw grid lines
         self.ax.set_xticks(np.arange(-0.5, W, 1), minor=True)
         self.ax.set_yticks(np.arange(-0.5, H, 1), minor=True)
         self.ax.grid(which="minor", color="k",
@@ -970,18 +992,17 @@ class InteractiveResultsPage(QWidget):
         if not event.inaxes:
             return
 
+        self.current_path = None
+
         env = self.main_window.trained_env
         if not env:
             return
 
-        # Convert click coordinates to cell indices
         c, r = int(round(event.xdata)), int(round(event.ydata))
 
-        # Check if click is within bounds
         if not (0 <= r < env.height and 0 <= c < env.width):
             return
 
-        # Check if the cell is an obstacle
         if env.grid[r, c] == 1:
             QMessageBox.warning(self, "Invalid Start",
                                 "The selected cell is an obstacle.")
@@ -989,9 +1010,9 @@ class InteractiveResultsPage(QWidget):
 
         self.selected_start_pos = (r, c)
         self.instruction_label.setText(
-            f"Start point selected at (Y={r}, X={c}).\nAdjust orientation and visualize.")
+            f"Start point selected at (Y={r}, X={c}).\n"
+            "Adjust orientation and visualize.")
 
-        # Redraw grid and show a temporary marker for the selected start
         self.draw_base_grid()
         self.ax.scatter(c, r, marker="o", c=self.cmap.colors[1], s=150,
                         zorder=5, label="Selected Start", edgecolors='black')
@@ -1036,6 +1057,7 @@ class InteractiveResultsPage(QWidget):
                                     "The path limit was reached without finding a solution.")
                 break
 
+        self.current_path = path
         agent.epsilon = eps_bak
 
         self.ax.scatter(start_c, start_r, marker="o", c=self.cmap.colors[1],
@@ -1059,8 +1081,58 @@ class InteractiveResultsPage(QWidget):
                            scale=1, width=0.015, color=self.cmap.colors[3], zorder=6)
 
         self.ax.set_title(
-            f"Greedy path from (Y={start_r}, X={start_c}, θ={start_k}°) | Steps: {len(path)-1}")
+            f"Greedy Path from (Y={start_r}, X={start_c}, θ={start_k*45}°) | Steps: {len(path)-1}")
         self.canvas.draw()
+
+    def save_path_to_file(self):
+        """Converts and saves the current path to a .npy file."""
+        if not self.current_path:
+            QMessageBox.warning(self, "No Path Available",
+                                "Please visualize a path first before saving.")
+            return
+
+        env = self.main_window.trained_env
+        if not env:
+            QMessageBox.critical(self, "Error", "Environment data not found.")
+            return
+
+        resolution = self.resolution_spinbox.value()
+
+        metric_path = []
+        for (r, c, k) in self.current_path:
+            x_meters = c * resolution
+            y_meters = r * resolution
+            orientation_radians = env.idx_to_angle(k)
+            metric_path.append((x_meters, y_meters, orientation_radians))
+
+        path_array = np.array(metric_path, dtype=float)
+
+        settings = QSettings("MyRLApp", "PathSaver")
+        last_dir = settings.value("last_path_save_dir", "")
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Path",
+            last_dir,
+            "Numpy files (*.npy)"
+        )
+
+        if file_path:
+            try:
+                np.save(file_path, path_array)
+                directory = os.path.dirname(file_path)
+                settings.setValue("last_path_save_dir", directory)
+                QMessageBox.information(
+                    self,
+                    "Success",
+                    f"Path successfully saved to:\n{file_path}"
+                )
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to save path.\nError: {e}"
+                )
 
 
 class EndPage(QWidget):
