@@ -147,7 +147,7 @@ class TrainingWorker(QObject):
                                min_epsilon=0.05, max_epsilon=0.9)
         max_steps = env.height * env.width * 2
         _, _, metrics = train_adaptative(
-            env, agent, success_window=100, max_steps=max_steps, inc_step=0.02)
+            env, agent, success_window=100, max_steps=max_steps, inc_step=0.02, change_start_percentage=0.6)
 
         print("Training finished.")
 
@@ -475,14 +475,8 @@ class GridConfigurationPage(QWidget):
         self.spinbox_start_y.setMaximum(rows - 1)
         self.spinbox_goal_x.setMaximum(cols - 1)
         self.spinbox_goal_y.setMaximum(rows - 1)
-        if not self.spinbox_grid_cols.isEnabled():
-            self.spinbox_goal_x.setValue(
-                min(self.spinbox_goal_x.value(), cols - 1))
-            self.spinbox_goal_y.setValue(
-                min(self.spinbox_goal_y.value(), rows - 1))
-        else:
-            self.spinbox_goal_x.setValue(cols - 1)
-            self.spinbox_goal_y.setValue(rows - 1)
+        self.spinbox_goal_x.setValue(cols - 1)
+        self.spinbox_goal_y.setValue(rows - 1)
         self.grid_size_changed.emit((cols, rows))
         self._on_start_changed()
         self._on_goal_changed()
