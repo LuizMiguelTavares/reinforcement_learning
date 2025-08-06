@@ -31,6 +31,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap, BoundaryNorm
+from matplotlib.patches import Patch
 import matplotlib
 
 # Import classes and functions from the Reinforcement Learning script
@@ -587,6 +588,17 @@ class GridGenerator(QWidget):
         self.ax.set_ylim(-0.5, self.ny - 0.5)
         self.ax.set_title(
             "Click/drag to draw obstacles. Use compasses for orientation.")
+        self.ax.set_xlabel("Columns (X)")
+        self.ax.set_ylabel("Rows (Y)")
+
+        legend_elements = [
+            Patch(facecolor=self.cmap.colors[2],
+                  edgecolor='black', label='Start'),
+            Patch(facecolor=self.cmap.colors[3],
+                  edgecolor='black', label='Goal')
+        ]
+        self.ax.legend(handles=legend_elements, bbox_to_anchor=(
+            1.04, 1), loc='upper left', borderaxespad=0.)
         self._draw_orientation_arrows()
         self.canvas.draw()
 
@@ -867,6 +879,10 @@ class InteractiveResultsPage(QWidget):
         self.visualize_button = QPushButton("Visualize Path")
         self.visualize_button.setProperty("class", "navigation")
 
+        # Colors for legend
+        colors = ["#e74c3c", "#2ecc71", "#3498db", "#fffb00"]
+        self.cmap = ListedColormap(colors)
+
         # Add widgets to the centered layout
         controls_layout.addStretch(1)
         controls_layout.addWidget(self.instruction_label)
@@ -898,7 +914,7 @@ class InteractiveResultsPage(QWidget):
     def setup_page(self):
         env = self.main_window.trained_env
         if not env:
-            return
+            returnk
         self.selected_start_pos = (
             env.start[0], env.start[1])  # Default to env start
         self.start_compass.set_orientation(env.start[2])
@@ -935,8 +951,19 @@ class InteractiveResultsPage(QWidget):
         self.ax.set_xlim([-0.5, W - 0.5])
         self.ax.set_ylim([-0.5, H - 0.5])
         self.ax.set_title("Click a cell to select a start, then visualize")
+        self.ax.set_xlabel("Columns (X)")
+        self.ax.set_ylabel("Rows (Y)")
+        legend_elements = [
+            Patch(facecolor=self.cmap.colors[1],
+                  edgecolor='black', label='Start'),
+            Patch(facecolor=self.cmap.colors[0],
+                  edgecolor='black', label='Goal')
+        ]
+        self.ax.legend(handles=legend_elements, bbox_to_anchor=(
+            1.04, 1), loc='upper left', borderaxespad=0.)
+
         self.ax.scatter(env.goal[1], env.goal[0], marker="*",
-                        c="#e74c3c", s=250, zorder=5, label="Goal", edgecolors='black')
+                        c=self.cmap.colors[0], s=250, zorder=5, label="Goal", edgecolors='black')
         self.canvas.draw()
 
     def on_canvas_click(self, event):
@@ -966,7 +993,7 @@ class InteractiveResultsPage(QWidget):
 
         # Redraw grid and show a temporary marker for the selected start
         self.draw_base_grid()
-        self.ax.scatter(c, r, marker="o", c="#2ecc71", s=150,
+        self.ax.scatter(c, r, marker="o", c=self.cmap.colors[1], s=150,
                         zorder=5, label="Selected Start", edgecolors='black')
         self.canvas.draw()
 
@@ -1011,13 +1038,13 @@ class InteractiveResultsPage(QWidget):
 
         agent.epsilon = eps_bak
 
-        self.ax.scatter(start_c, start_r, marker="o", c="#2ecc71",
+        self.ax.scatter(start_c, start_r, marker="o", c=self.cmap.colors[1],
                         s=150, zorder=5, label="Selected Start", edgecolors='black')
 
         for (pr, pc, _) in path:
             if env.grid[pr, pc] == 0 and (pr, pc) != (env.goal[0], env.goal[1]):
                 self.ax.add_patch(plt.Rectangle(
-                    (pc - 0.5, pr - 0.5), 1, 1, fill=True, alpha=0.3, color="#3498db", zorder=3))
+                    (pc - 0.5, pr - 0.5), 1, 1, fill=True, alpha=0.3, color=self.cmap.colors[2], zorder=3))
 
         xs, ys, us, vs = [], [], [], []
         arrow_scale = 0.35
@@ -1029,7 +1056,7 @@ class InteractiveResultsPage(QWidget):
             vs.append(math.sin(ang) * arrow_scale)
         if xs:
             self.ax.quiver(xs, ys, us, vs, angles='xy', scale_units='xy',
-                           scale=1, width=0.015, color='yellow', zorder=6)
+                           scale=1, width=0.015, color=self.cmap.colors[3], zorder=6)
 
         self.ax.set_title(
             f"Greedy path from (Y={start_r}, X={start_c}, θ={start_k}°) | Steps: {len(path)-1}")
