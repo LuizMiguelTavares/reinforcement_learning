@@ -141,13 +141,15 @@ class TrainingWorker(QObject):
                   goal_angle),  # (row, col),
             final_orientation_irrelevant=self.data.goal_orientation_irrelevant,
             agent_type=self.data.agent_type,
-            allow_only_forward=False
+            allow_only_forward=False,
+            energy_consumption_gain=0.4,
+            safety_nearby_obstacle_gain=2
         )
         agent = QLearningAgent(env, alpha=0.1, gamma=0.99,
                                min_epsilon=0.05, max_epsilon=0.9)
         max_steps = env.height * env.width * 2
         _, _, metrics = train_adaptative(
-            env, agent, success_window=100, max_steps=max_steps, inc_step=0.02, change_start_percentage=0.6)
+            env, agent, success_window=100, max_steps=max_steps, inc_step=0.02, change_start_percentage=0.9)
 
         print("Training finished.")
 

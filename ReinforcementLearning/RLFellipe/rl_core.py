@@ -78,8 +78,8 @@ class GridWorld:
 
         # Safety
         self.safety_nearby_obstacle_gain = safety_nearby_obstacle_gain
-        self.safety_nearby_obstacle = (
-            True if safety_nearby_obstacle_gain > 0 else False)
+        self.safety_nearby_obstacle = safety_nearby_obstacle_gain > 0
+
         self.min_dist_nearby_obstacle = min_dist_nearby_obstacle
 
         # Energy consumption
