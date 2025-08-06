@@ -23,8 +23,8 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QMessageBox,
 )
-from PySide6.QtCore import Signal, Qt, QThread, QObject
-from PySide6.QtGui import QScreen
+from PySide6.QtCore import Signal, Qt, QThread, QObject, QTimer
+from PySide6.QtGui import QScreen, QPainter, QColor, QPen
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -55,6 +55,58 @@ class AppData:
     param3: int = 50
     param4: int = 50
     param5: int = 50
+
+
+class LoadingSpinner(QWidget):
+    """
+    A widget that displays a spinning loading animation.
+    """
+
+    def __init__(self, parent: Optional[QWidget] = None, speed: int = 8, smoothness_ms: int = 20):
+        """
+        Initializes the spinner.
+        :param parent: The parent widget.
+        :param speed: How many degrees the arc jumps per frame. Higher is faster.
+        :param smoothness_ms: The update interval in milliseconds. Lower is smoother.
+        """
+        super().__init__(parent)
+        self.angle = 0
+        self.speed = speed
+        self.smoothness_ms = smoothness_ms
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self._update_angle)
+        self.setMinimumSize(80, 80)
+        self.setMaximumSize(80, 80)
+        self.setObjectName("loadingSpinner")
+
+    def _update_angle(self):
+        """Increment the angle for the animation and schedule a repaint."""
+        self.angle = (self.angle + self.speed) % 360
+        self.update()
+
+    def paintEvent(self, event: object):
+        """Draw the spinning arc using QPainter."""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Define the rectangle area for the arc, with some padding
+        rect = self.rect().adjusted(5, 5, -5, -5)
+
+        # Set the pen style for the arc
+        pen = QPen(QColor("#3498db"), 8, Qt.SolidLine, Qt.RoundCap)
+        painter.setPen(pen)
+
+        # Draw the arc. The angles are specified in 1/16th of a degree.
+        # We draw a 90-degree arc that rotates.
+        painter.drawArc(rect, self.angle * 16, 90 * 16)
+
+    def start(self):
+        """Start the animation timer."""
+        self.timer.start(self.smoothness_ms)
+
+    def stop(self):
+        """Stop the animation timer."""
+        self.timer.stop()
 
 
 class TrainingWorker(QObject):
@@ -280,6 +332,7 @@ class StartPage(QWidget):
         layout.setSpacing(20)
         label = QLabel("Environment Setup")
         label.setObjectName("titleLabel")
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.button_next = QPushButton("Start")
         self.button_next.setProperty("class", "navigation")
         layout.addWidget(label)
@@ -297,6 +350,7 @@ class GridSourcePage(QWidget):
         layout.setSpacing(20)
         title = QLabel("Grid Source")
         title.setObjectName("titleLabel")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         button_draw = QPushButton("Draw Grid from Scratch")
         button_draw.setProperty("class", "navigation")
         button_draw.clicked.connect(
@@ -355,9 +409,10 @@ class GridConfigurationPage(QWidget):
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title = QLabel("Grid Configuration")
         title.setObjectName("titleLabel")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         form_layout = QFormLayout()
         form_layout.setSpacing(15)
-        form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignCenter)
         self.spinbox_grid_cols = QSpinBox()
         self.spinbox_grid_cols.setRange(4, 100)
         self.spinbox_grid_rows = QSpinBox()
@@ -685,22 +740,39 @@ class TrainingScreen(QWidget):
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.setSpacing(30)
+
         title = QLabel("Training Agent")
         title.setObjectName("titleLabel")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # Create the loading spinner with adjustable speed.
+        # speed: higher is faster.
+        # smoothness_ms: lower is smoother (but uses more CPU).
+        # Example: self.spinner = LoadingSpinner(self, speed=15) for a faster spinner.
+        self.spinner = LoadingSpinner(self, speed=15, smoothness_ms=20)
+
         self.status_label = QLabel("Preparing to start training...")
         self.status_label.setObjectName("trainingStatusLabel")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
         layout.addWidget(title)
+        layout.addStretch()
+        layout.addWidget(self.spinner, 0, Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.status_label)
+        layout.addStretch()
 
     def start_worker(self):
         self.status_label.setText(
-            "Training in progress... Please wait.\nThe interface will remain responsive.")
+            "Training in progress... Please wait.")
+        self.spinner.start()  # Start the animation
+
         self.thread = QThread()
         self.worker = TrainingWorker(self.main_window.data)
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
+
+        # Connect signals to stop spinner and clean up
+        self.worker.training_finished.connect(self.spinner.stop)
         self.worker.training_finished.connect(
             self.main_window.on_training_complete)
         self.worker.training_finished.connect(self.thread.quit)

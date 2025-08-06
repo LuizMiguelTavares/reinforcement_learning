@@ -249,12 +249,6 @@ class GridWorld:
             new_idx = (ang_idx + d_idx) % self.num_angles
             return dr, dc, new_idx
 
-    def _raw_action(self, ang_idx: int, action: int):
-
-        dr, dc, d_idx = self.optionsaction
-        new_idx = (ang_idx + d_idx) % self.num_angles
-        return dr, dc, new_idx
-
     def action(self, ang_idx: int, a: int):
         dr, dc, new_idx = self._action_lookup[ang_idx, a]
         return int(dr), int(dc), int(new_idx)

@@ -236,3 +236,10 @@ QSlider::handle:horizontal:hover {
     background: #2980b9;
     border-color: #2980b9;
 }
+
+/* --- Loading Spinner --- */
+/* The spinner is drawn using QPainter, so its color is set in the code. */
+/* This is a placeholder for potential future styling (e.g., background). */
+QWidget#loadingSpinner {
+    background-color: transparent;
+}
