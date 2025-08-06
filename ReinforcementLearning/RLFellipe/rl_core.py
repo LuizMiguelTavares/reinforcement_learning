@@ -473,25 +473,15 @@ def train_adaptative(
             a = agent.choose_action_bias(s, force_move=force_move)
             s2, r, done = env.step(a)
             agent.update(s, a, r, s2, done)
-            # if s2[0] == s[0] and s2[1] == s[1] and s2[2] != s[2]:
-            #     same_place += 1
-            # elif s2[0] == s[0] and s2[1] == s[1] and s2[2] == s[2]:
-            #     bump_streak += 1
-            # else:
-            #     bump_streak = 0
-            #     same_place = 0
-            #     force_move = False
-
-            # if same_place > 10:
-            #     same_place_more_than_10 += 1
-            #     force_move = True
-
-            # if bump_streak > 10 and force_move:
-            #     got_stuck += 1
-            #     force_move = False
 
             s, tot = s2, tot + r
             steps += 1
+
+            # --- A MELHORIA ESTÁ AQUI ---
+            # Força a thread a liberar o GIL (Global Interpreter Lock),
+            # permitindo que outras threads (como a da GUI) executem.
+            # time.sleep(0) é a forma mais eficaz de fazer isso.
+            time.sleep(0)
 
         ep_time = time.perf_counter() - ep_begin
         ep_time_mean.append(ep_time)
@@ -527,7 +517,7 @@ def train_adaptative(
 
             if max_group_success_countdown > success_countdown:
                 agent.epsilon = max(agent.min_eps, agent.epsilon - inc_step)
-                max_group_success_countdown = 0
+                # max_group_success_countdown = 0
 
             row = [
                 ep, float(np.mean(rewards)), float(

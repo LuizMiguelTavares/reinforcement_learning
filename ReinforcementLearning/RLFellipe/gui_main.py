@@ -1,4 +1,5 @@
 import sys
+import os
 from typing import Optional, Tuple, Any
 import numpy as np
 from dataclasses import dataclass, fields
@@ -23,7 +24,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QMessageBox,
 )
-from PySide6.QtCore import Signal, Qt, QThread, QObject, QTimer
+from PySide6.QtCore import Signal, Qt, QThread, QObject, QTimer, QSettings
 from PySide6.QtGui import QScreen, QPainter, QColor, QPen
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
@@ -33,7 +34,7 @@ from matplotlib.colors import ListedColormap, BoundaryNorm
 import matplotlib
 
 # Import classes and functions from the Reinforcement Learning script
-from rl_differential import GridWorld, QLearningAgent, train_adaptative
+from rl_core import GridWorld, QLearningAgent, train_adaptative
 
 matplotlib.use("qtagg")
 
@@ -367,8 +368,11 @@ class GridSourcePage(QWidget):
         layout.addWidget(self.import_status_label)
 
     def _handle_import(self):
+        settings = QSettings("MyRLApp", "GridGenerator")
+        last_dir = settings.value("last_save_dir", "")
+
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "Import Grid", "", "Numpy files (*.npy);;CSV files (*.csv)")
+            self, "Import Grid", last_dir, "Numpy files (*.npy);;CSV files (*.csv)")
         if not file_path:
             return
         try:
@@ -380,10 +384,15 @@ class GridSourcePage(QWidget):
                 raise ValueError("Unsupported file type")
             if grid_map.ndim != 2 or not np.all(np.isin(grid_map, [0, 1])):
                 raise ValueError("Map must be a 2D array of 0s and 1s.")
+
+            # On success, save the directory
+            directory = os.path.dirname(file_path)
+            settings.setValue("last_save_dir", directory)
+
             rows, cols = grid_map.shape
             self.main_window.update_data("obstacle_map", grid_map)
             self.main_window.update_data("grid_size", (cols, rows))
-            file_name = file_path.split('/')[-1]
+            file_name = os.path.basename(file_path)
             self.import_status_label.setText(f"Imported: {file_name}")
             self.import_status_label.setProperty("class", "success")
             self.navigation_requested.emit(True)
@@ -521,11 +530,21 @@ class GridGenerator(QWidget):
         content_layout.addLayout(start_controls_layout)
         content_layout.addWidget(self.canvas, 1)
         content_layout.addLayout(goal_controls_layout)
+        main_layout.addLayout(content_layout)
+
+        # --- Bottom Buttons ---
+        bottom_buttons_layout = QHBoxLayout()
+        bottom_buttons_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        bottom_buttons_layout.setSpacing(15)
+
+        self.save_button = QPushButton("Save Map")
         self.confirm_button = QPushButton("Confirm Grid and Continue")
         self.confirm_button.setObjectName("confirmButton")
-        main_layout.addLayout(content_layout)
-        main_layout.addWidget(self.confirm_button,
-                              alignment=Qt.AlignmentFlag.AlignCenter)
+
+        bottom_buttons_layout.addWidget(self.save_button)
+        bottom_buttons_layout.addWidget(self.confirm_button)
+        main_layout.addLayout(bottom_buttons_layout)
+
         colors = ["#ffffff", "#e74c3c", "#2ecc71", "#3498db"]
         self.cmap = ListedColormap(colors)
         bounds = [-0.5, 0.5, 1.5, 2.5, 3.5]
@@ -594,6 +613,7 @@ class GridGenerator(QWidget):
         self.canvas.mpl_connect("button_press_event", self.on_press)
         self.canvas.mpl_connect("button_release_event", self.on_release)
         self.canvas.mpl_connect("motion_notify_event", self.on_motion)
+        self.save_button.clicked.connect(self.on_save_map)
         self.confirm_button.clicked.connect(self.on_confirm)
         self.start_compass.orientation_changed.connect(
             self.on_start_orientation_change)
@@ -659,6 +679,38 @@ class GridGenerator(QWidget):
     def on_confirm(self):
         final_obstacle_map = np.where(self.display_map == 1, 1, 0)
         self.grid_confirmed.emit(final_obstacle_map)
+
+    def on_save_map(self):
+        """Saves the current obstacle map to a .npy file."""
+        settings = QSettings("MyRLApp", "GridGenerator")
+        last_dir = settings.value("last_save_dir", "")
+
+        final_obstacle_map = np.where(self.display_map == 1, 1, 0)
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Grid Map",
+            last_dir,
+            "Numpy files (*.npy)"
+        )
+
+        if file_path:
+            try:
+                np.save(file_path, final_obstacle_map)
+                directory = os.path.dirname(file_path)
+                settings.setValue("last_save_dir", directory)
+
+                QMessageBox.information(
+                    self,
+                    "Success",
+                    f"Map successfully saved to:\n{file_path}"
+                )
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to save map.\nError: {e}"
+                )
 
 
 class TrainingConfigurationPage(QWidget):
@@ -749,7 +801,7 @@ class TrainingScreen(QWidget):
         # speed: higher is faster.
         # smoothness_ms: lower is smoother (but uses more CPU).
         # Example: self.spinner = LoadingSpinner(self, speed=15) for a faster spinner.
-        self.spinner = LoadingSpinner(self, speed=15, smoothness_ms=20)
+        self.spinner = LoadingSpinner(self, speed=4, smoothness_ms=30)
 
         self.status_label = QLabel("Preparing to start training...")
         self.status_label.setObjectName("trainingStatusLabel")
