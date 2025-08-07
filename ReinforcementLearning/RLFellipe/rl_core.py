@@ -28,7 +28,7 @@ class GridWorld:
         goal: Optional[Tuple[int, int, float]] = None,
         reward_goal: float = 100.0,
         reward_obstacle: float = -100.0,
-        reward_step: float = -0.001,
+        reward_step: float = 0.001,
         use_reward_shaping: bool = False,
         # None | 'manhattan' | 'euclidean'
         shaping: Optional[str] = "euclidean",
@@ -71,6 +71,14 @@ class GridWorld:
         self.reward_goal = reward_goal
         self.reward_obstacle = reward_obstacle
         self.reward_step = reward_step
+
+        self.reward_backup = {
+            'total': [],      # Mudei para lista para manter o histórico do total também
+            'step': [],
+            'shaping': [],
+            'obstacle': [],
+            'turn': []
+        }
 
         # Reward shaping
         self.use_reward_shaping = use_reward_shaping
@@ -292,7 +300,7 @@ class GridWorld:
             return next_state, reward, done
 
         # step penalty
-        reward += self.reward_step
+        rstep = - self.reward_step
 
         # potential-based shaping
         if self.shaping in ("manhattan", "euclidean") and self.use_reward_shaping:
@@ -302,14 +310,26 @@ class GridWorld:
             else:
                 d0 = math.hypot(r - self.goal[0], c - self.goal[1])
                 d1 = math.hypot(nr - self.goal[0], nc - self.goal[1])
-            reward += (d0 - d1)
+            rdist = (d0 - d1)
+        else:
+            rdist = 0.0
 
         # nearby obstacles safety (dict is keyed by (r,c), not angle)
         if self.safety_nearby_obstacle:
-            reward += self.nearby_obstacles_reward.get((nr, nc), 0.0)
+            robs = self.nearby_obstacles_reward.get((nr, nc), 0.0)
+        else:
+            robs = 0.0
 
         # energy/turn penalty
-        reward += -self.energy_consumption_gain * abs(turn_angle) / math.pi
+        rturn = -self.energy_consumption_gain * abs(turn_angle) / math.pi
+
+        reward = rstep + rdist + robs + rturn
+
+        self.reward_backup['total'].append(reward)
+        self.reward_backup['step'].append(rstep)
+        self.reward_backup['shaping'].append(rdist)
+        self.reward_backup['obstacle'].append(robs)
+        self.reward_backup['turn'].append(rturn)
 
         return next_state, reward, done
 

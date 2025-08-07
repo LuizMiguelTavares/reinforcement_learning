@@ -41,7 +41,7 @@ if __name__ == "__main__":
     else:
         # Se nenhum arquivo for passado, use um nome de arquivo de exemplo.
         # **IMPORTANTE**: Altere "sua_trajetoria.npy" para o nome real do seu arquivo.
-        caminho = "paths/path_test.npy"
+        caminho = "last_rewards.npy"
         print(
             f"Nenhum arquivo especificado. Tentando carregar o arquivo de exemplo: '{caminho}'")
         print("Uso: python seu_script.py <caminho_para_o_arquivo.npy>")

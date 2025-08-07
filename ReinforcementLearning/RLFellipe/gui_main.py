@@ -35,6 +35,8 @@ from matplotlib.colors import ListedColormap, BoundaryNorm
 from matplotlib.patches import Patch
 import matplotlib
 
+import pickle
+
 # Import classes and functions from the Reinforcement Learning script
 from rl_core import GridWorld, QLearningAgent, train_adaptative
 
@@ -53,11 +55,11 @@ class AppData:
     goal_orientation_irrelevant: bool = False
     agent_type: str = "Omnidirectional"
     # Variables for the parameter sliders
-    param1: int = 50
-    param2: int = 50
-    param3: int = 50
-    param4: int = 50
-    param5: int = 50
+    paramSafety: int = 50
+    paramAgility: int = 50
+    paramEnergy: int = 50
+    paramPlanning: int = 50
+    paramExtra: int = 50
 
 
 class LoadingSpinner(QWidget):
@@ -154,6 +156,8 @@ class TrainingWorker(QObject):
             env, agent, success_window=100, max_steps=max_steps, inc_step=0.02, change_start_percentage=0.9)
 
         print("Training finished.")
+
+        pickle.dump(env.reward_backup, open("last_reward.pkl", "wb"))
 
         # Emit the signal with the results
         self.training_finished.emit(agent, env, metrics)
@@ -775,7 +779,7 @@ class TrainingConfigurationPage(QWidget):
             slider_row_layout = QHBoxLayout()
             slider_row_layout.addWidget(slider)
             slider_row_layout.addWidget(self.value_labels[param_name])
-            sliders_layout.addRow(f"Parameter {i+1}:", slider_row_layout)
+            sliders_layout.addRow(f"{param_name}:", slider_row_layout)
             self.param_changed.emit(param_name, 50)
         main_layout.addWidget(sliders_container)
         main_layout.addStretch()
