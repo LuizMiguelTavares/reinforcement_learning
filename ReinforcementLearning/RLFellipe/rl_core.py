@@ -26,20 +26,24 @@ class GridWorld:
         grid_map: Optional[np.ndarray] = None,
         start: Optional[Tuple[int, int, float]] = None,
         goal: Optional[Tuple[int, int, float]] = None,
-        reward_goal: float = 100.0,
-        reward_obstacle: float = -100.0,
-        reward_step: float = 0.001,
-        use_reward_shaping: bool = False,
         # None | 'manhattan' | 'euclidean'
         shaping: Optional[str] = "euclidean",
         allow_diagonal_obstacle: bool = False,
         allow_only_forward: bool = False,
         min_dist_nearby_obstacle: int = 3,
-        safety_nearby_obstacle_gain: float = 0.0,
-        energy_consumption_gain: float = 0.0,
         final_orientation_irrelevant: bool = False,
         # 'Differential' | 'Omnidirectional' | 'Car Like'
         agent_type: str = "Differential",
+        # Reward
+        reward_goal: float = 100.0,
+        reward_obstacle: float = -100.0,
+        use_reward_shaping: bool = False,
+
+        safety_nearby_obstacle_gain: float = 0.0,
+        reward_step: float = 0.001,
+        delta_gain: float = 0.0,
+        turn_gain: float = 0.0,
+
     ):
         self.num_angles = 8
 
@@ -71,11 +75,12 @@ class GridWorld:
         self.reward_goal = reward_goal
         self.reward_obstacle = reward_obstacle
         self.reward_step = reward_step
+        self.delta_gain = delta_gain
 
         self.reward_backup = {
             'total': [],      # Mudei para lista para manter o histórico do total também
             'step': [],
-            'shaping': [],
+            'delta': [],
             'obstacle': [],
             'turn': []
         }
@@ -91,7 +96,7 @@ class GridWorld:
         self.min_dist_nearby_obstacle = min_dist_nearby_obstacle
 
         # Energy consumption
-        self.energy_consumption_gain = abs(energy_consumption_gain)
+        self.turn_gain = abs(turn_gain)
 
         self.diag_cost = -abs(math.sqrt(2)*reward_step)
         self.allow_diag_obstacle = allow_diagonal_obstacle
@@ -299,35 +304,26 @@ class GridWorld:
             reward, done = self.reward_goal, True
             return next_state, reward, done
 
-        # step penalty
+        # AUTONOMY
         rstep = - self.reward_step
+        rdelta = 0.0
 
-        # potential-based shaping
-        if self.shaping in ("manhattan", "euclidean") and self.use_reward_shaping:
-            if self.shaping == "manhattan":
-                d0 = abs(r - self.goal[0]) + abs(c - self.goal[1])
-                d1 = abs(nr - self.goal[0]) + abs(nc - self.goal[1])
-            else:
-                d0 = math.hypot(r - self.goal[0], c - self.goal[1])
-                d1 = math.hypot(nr - self.goal[0], nc - self.goal[1])
-            rdist = (d0 - d1)
-        else:
-            rdist = 0.0
+        rdist = rstep + rdelta
 
-        # nearby obstacles safety (dict is keyed by (r,c), not angle)
+        # SAFETY
         if self.safety_nearby_obstacle:
             robs = self.nearby_obstacles_reward.get((nr, nc), 0.0)
         else:
             robs = 0.0
 
-        # energy/turn penalty
-        rturn = -self.energy_consumption_gain * abs(turn_angle) / math.pi
+        # AGILITY
+        rturn = -self.turn_gain * abs(turn_angle) / math.pi
 
-        reward = rstep + rdist + robs + rturn
+        reward = rdist + robs + rturn
 
         self.reward_backup['total'].append(reward)
         self.reward_backup['step'].append(rstep)
-        self.reward_backup['shaping'].append(rdist)
+        self.reward_backup['delta'].append(rdelta)
         self.reward_backup['obstacle'].append(robs)
         self.reward_backup['turn'].append(rturn)
 

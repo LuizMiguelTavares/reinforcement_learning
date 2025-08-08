@@ -38,16 +38,6 @@ def analisar_recompensas(nome_arquivo):
 
     print(estatisticas)
 
-    # --- Análise Extra ---
-    print("\n--- Informações Adicionais ---")
-
-    # Contando a ocorrência de recompensas de obstáculo
-    # Isso é útil para variáveis categóricas ou com poucos valores distintos
-    if 'obstacle' in df.columns:
-        contagem_obstaculos = df['obstacle'].value_counts()
-        print("\nContagem de recompensas de 'obstacle':")
-        print(contagem_obstaculos)
-
 
 # Executa a função de análise
 if __name__ == "__main__":

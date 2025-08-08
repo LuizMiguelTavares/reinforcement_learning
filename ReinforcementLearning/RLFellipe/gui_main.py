@@ -57,7 +57,7 @@ class AppData:
     # Variables for the parameter sliders
     paramSafety: int = 50
     paramAgility: int = 50
-    paramEnergy: int = 50
+    paramAutonomy: int = 50
     paramPlanning: int = 50
 
 
@@ -134,6 +134,8 @@ class TrainingWorker(QObject):
         start_angle = (self.data.start[2] * 45 * np.pi) / 180.0
         goal_angle = (self.data.goal[2] * 45 * np.pi) / 180.0
 
+        self.set_reward_params()
+
         env = GridWorld(
             width=self.data.grid_size[0],
             height=self.data.grid_size[1],
@@ -145,8 +147,9 @@ class TrainingWorker(QObject):
             final_orientation_irrelevant=self.data.goal_orientation_irrelevant,
             agent_type=self.data.agent_type,
             allow_only_forward=False,
-            energy_consumption_gain=0.4,
-            safety_nearby_obstacle_gain=2
+            turn_gain=self.reward_params['agility_gain'],
+            safety_nearby_obstacle_gain=self.reward_params['safety_nearby_obstacle_gain'],
+            reward_step=self.reward_params['autonomy_gain'],
         )
         agent = QLearningAgent(env, alpha=0.1, gamma=0.99,
                                min_epsilon=0.05, max_epsilon=0.9)
@@ -160,6 +163,25 @@ class TrainingWorker(QObject):
 
         # Emit the signal with the results
         self.training_finished.emit(agent, env, metrics)
+
+    def set_reward_params(self):
+        """
+        Sets the reward parameters based on the AppData instance.
+        """
+        ksafe = self.data.paramSafety / 100
+        kagility = self.data.paramAgility / 100
+        kautonomy = self.data.paramAutonomy / 100
+
+        kplanning = self.data.paramPlanning / 100
+
+        self.reward_params = {
+            "safety_nearby_obstacle_gain": ksafe * 1 / 0.07,
+            "agility_gain": kagility * 1 / 0.017,
+            "autonomy_gain": kautonomy * 1 / 0.01,
+            "planning_gain": kplanning * 1,
+        }
+
+        print(f"Reward parameters set: {self.reward_params}")
 
 
 class CompassWidget(QWidget):
