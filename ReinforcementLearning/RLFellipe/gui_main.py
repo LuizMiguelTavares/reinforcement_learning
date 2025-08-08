@@ -59,7 +59,6 @@ class AppData:
     paramAgility: int = 50
     paramEnergy: int = 50
     paramPlanning: int = 50
-    paramExtra: int = 50
 
 
 class LoadingSpinner(QWidget):
@@ -779,7 +778,8 @@ class TrainingConfigurationPage(QWidget):
             slider_row_layout = QHBoxLayout()
             slider_row_layout.addWidget(slider)
             slider_row_layout.addWidget(self.value_labels[param_name])
-            sliders_layout.addRow(f"{param_name}:", slider_row_layout)
+            sliders_layout.addRow(
+                f"{param_name.removeprefix('param')}:", slider_row_layout)
             self.param_changed.emit(param_name, 50)
         main_layout.addWidget(sliders_container)
         main_layout.addStretch()

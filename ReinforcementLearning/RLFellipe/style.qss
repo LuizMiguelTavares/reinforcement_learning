@@ -226,10 +226,22 @@ QPushButton[class="agentButton"]:checked, QPushButton[class="toggleButton"]:chec
 
 /* --- Slider Styles --- */
 
+/* Style for the parameter names (e.g., "Safety:") in the training configuration. */
+/* This targets any QLabel inside the slidersContainer, but the more specific */
+/* #sliderValueLabel selector below will override this for the number labels. */
+QWidget#slidersContainer QLabel {
+    font-size: 17px;
+    font-weight: bold;
+    color: #34495e;
+    padding-right: 15px;
+}
+
+/* Style for the numeric value label next to the slider */
 QLabel#sliderValueLabel {
     font-size: 16px;
     font-weight: bold;
     color: #3498db;
+    padding-right: 0px; /* Override padding from the rule above */
 }
 
 QSlider::groove:horizontal {
